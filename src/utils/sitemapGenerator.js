@@ -29,8 +29,6 @@ async function crawlSite(baseUrl, maxPages = 100, cfg = config, onProgress) {
   const sitemapUrls = [];
   let puppeteerBrowser = null;
 
-  console.log(process.env.CHROME_EXECUTABLE_PATH);
-
   try {
     while (queue.length > 0 && sitemapUrls.length < maxPages) {
       const currentUrl = queue.shift();
@@ -74,20 +72,13 @@ async function crawlSite(baseUrl, maxPages = 100, cfg = config, onProgress) {
         } else {
           // CSR detected - fallback to Puppeteer
           if (!puppeteerBrowser) {
-            const isWindows = process.platform === "win32";
-
-            const executablePath =
-              process.env.NODE_ENV === "production" || !isWindows
-                ? await chromium.executablePath
-                : process.env.CHROME_EXECUTABLE_PATH;
-
+            const executablePath = await chromium.executablePath(
+              "https://github.com/Sparticuz/chromium/releases/download/v126.0.0/chromium-v126.0.0-pack.tar"
+            );
             puppeteerBrowser = await puppeteer.launch({
               args: chromium.args,
               executablePath,
-              headless:
-                process.env.NODE_ENV === "production" || !isWindows
-                  ? chromium.headless
-                  : true,
+              headless: chromium.headless,
             });
           }
           const puppeteerLinks = await getLinksWithPuppeteer(
