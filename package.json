@@ -6,15 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "postinstall": "npx puppeteer browsers install chrome"
-
+    "lint": "next lint"
   },
   "dependencies": {
+    "@sparticuz/chromium-min": "^132.0.0",
     "axios": "^1.8.1",
     "next": "15.2.0",
     "node-html-parser": "^7.0.1",
     "puppeteer": "^24.3.0",
+    "puppeteer-core": "^10.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
