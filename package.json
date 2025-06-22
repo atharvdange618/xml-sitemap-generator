@@ -16,7 +16,7 @@
     "puppeteer": "^24.3.0",
     "puppeteer-core": "^10.4.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
