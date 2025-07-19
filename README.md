@@ -23,7 +23,7 @@ Generate a comprehensive XML sitemap for your website to improve search engine v
 1. Clone the repository:
 
    ```sh
-   git clone https://github.com/yourusername/xml-sitemap-generator.git
+   git clone https://github.com/atharvdange618/xml-sitemap-generator.git
    cd xml-sitemap-generator
    ```
 
