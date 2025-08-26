@@ -28,6 +28,7 @@ Generate a comprehensive XML sitemap for your website to improve search engine v
    ```
 
 2. Install dependencies:
+
    ```sh
    npm install
    ```
@@ -56,7 +57,8 @@ npm start
 3. Click **Generate Sitemap**.
 4. Download the generated `sitemap.xml` file and place it in your website's root directory.
 5. Reference the sitemap in your `robots.txt`:
-   ```
+
+   ```text
    Sitemap: https://example.com/sitemap.xml
    ```
 
@@ -78,7 +80,7 @@ npm start
 
 ## Project Structure
 
-```
+```text
 src/
   app/
     api/generate-sitemap/route.js   # API route for sitemap generation
