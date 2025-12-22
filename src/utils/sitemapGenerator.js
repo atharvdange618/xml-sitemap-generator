@@ -1,6 +1,5 @@
 import axios from "axios";
-import puppeteer from "puppeteer-core";
-import chromium from "@sparticuz/chromium-min";
+import puppeteer from "puppeteer";
 import { parse } from "node-html-parser";
 
 // Configuration object for thresholds and logging
@@ -22,81 +21,70 @@ const config = {
   },
 };
 
+const CONCURRENCY = 2;
+
 // Main crawling function
-async function crawlSite(baseUrl, maxPages = 100, cfg = config, onProgress) {
-  const visited = new Set();
-  const queue = [baseUrl];
-  const sitemapUrls = [];
+async function crawlSite(
+  baseUrl,
+  maxPages = 100,
+  cfg = config,
+  onProgress,
+  disallowedPaths = []
+) {
+  const sitemapData = new Map();
+  const queue = [{ url: baseUrl, depth: 0 }];
+  const visited = new Set([baseUrl]);
   let puppeteerBrowser = null;
 
+  const getBrowser = async () => {
+    if (!puppeteerBrowser) {
+      puppeteerBrowser = await puppeteer.launch({ headless: true });
+    }
+    return puppeteerBrowser;
+  };
+
   try {
-    while (queue.length > 0 && sitemapUrls.length < maxPages) {
-      const currentUrl = queue.shift();
+    while (queue.length > 0 && sitemapData.size < maxPages) {
+      const batch = queue.splice(0, Math.min(queue.length, CONCURRENCY));
 
-      // Fire the callback so the server can push an SSE update
-      if (onProgress) {
-        onProgress(currentUrl, sitemapUrls.length + 1);
-      }
+      await Promise.all(
+        batch.map(async ({ url, depth }) => {
+          if (sitemapData.size >= maxPages) return;
 
-      if (visited.has(currentUrl)) continue;
-      visited.add(currentUrl);
-
-      if (cfg.logging.verbose) console.log(`Crawling: ${currentUrl}`);
-
-      try {
-        // First attempt with HTTP request
-        const { links, isCSR } = await getLinksWithHTTP(
-          baseUrl,
-          currentUrl,
-          cfg
-        );
-
-        // Hybrid approach: if HTTP returns no links but content length is high, try Puppeteer
-        let finalLinks = links;
-        let finalIsCSR = isCSR;
-        if (!isCSR && links.length === 0) {
-          if (cfg.logging.verbose)
-            console.log(
-              `No links extracted via HTTP; trying Puppeteer for ${currentUrl}`
-            );
-          finalIsCSR = true;
-        }
-
-        if (!finalIsCSR) {
-          sitemapUrls.push(currentUrl);
-          for (const link of finalLinks) {
-            if (!visited.has(link) && !queue.includes(link)) {
-              queue.push(link);
+          try {
+            if (onProgress) {
+              onProgress(url, sitemapData.size + 1);
             }
-          }
-        } else {
-          // CSR detected - fallback to Puppeteer
-          if (!puppeteerBrowser) {
-            const executablePath = await chromium.executablePath(
-              "https://github.com/Sparticuz/chromium/releases/download/v126.0.0/chromium-v126.0.0-pack.tar"
+
+            const { links, lastmod } = await crawlUrl(
+              url,
+              baseUrl,
+              depth,
+              cfg,
+              getBrowser
             );
-            puppeteerBrowser = await puppeteer.launch({
-              args: chromium.args,
-              executablePath,
-              headless: chromium.headless,
-            });
-          }
-          const puppeteerLinks = await getLinksWithPuppeteer(
-            puppeteerBrowser,
-            baseUrl,
-            currentUrl,
-            cfg
-          );
-          sitemapUrls.push(currentUrl);
-          for (const link of puppeteerLinks) {
-            if (!visited.has(link) && !queue.includes(link)) {
-              queue.push(link);
+
+            const priority = calculatePriority(depth);
+            sitemapData.set(url, { lastmod, priority });
+
+            for (const link of links) {
+              const isDisallowed = disallowedPaths.some((path) =>
+                new URL(link).pathname.startsWith(path)
+              );
+              if (
+                !visited.has(link) &&
+                sitemapData.size < maxPages &&
+                !isDisallowed
+              ) {
+                visited.add(link);
+                queue.push({ url: link, depth: depth + 1 });
+              }
             }
+          } catch (error) {
+            console.error(`Error crawling ${url}:`, error.message);
           }
-        }
-      } catch (error) {
-        console.error(`Error crawling ${currentUrl}:`, error.message);
-      }
+        })
+      );
     }
   } finally {
     if (puppeteerBrowser) {
@@ -104,23 +92,65 @@ async function crawlSite(baseUrl, maxPages = 100, cfg = config, onProgress) {
     }
   }
 
-  return sitemapUrls;
+  return sitemapData;
+}
+
+async function crawlUrl(currentUrl, baseUrl, depth, cfg, getBrowser) {
+  if (cfg.logging.verbose)
+    console.log(`Crawling: ${currentUrl} (depth: ${depth})`);
+
+  try {
+    const { links, isCSR, lastmod } = await getLinksWithHTTP(
+      baseUrl,
+      currentUrl,
+      cfg
+    );
+
+    let finalLinks = links;
+    if (isCSR || links.length === 0) {
+      if (cfg.logging.verbose && !isCSR) {
+        console.log(`No links via HTTP; trying Puppeteer for ${currentUrl}`);
+      }
+      const browser = await getBrowser();
+      const puppeteerLinks = await getLinksWithPuppeteer(
+        browser,
+        baseUrl,
+        currentUrl,
+        cfg
+      );
+      finalLinks = [...new Set([...links, ...puppeteerLinks])];
+    }
+
+    return { links: finalLinks, lastmod };
+  } catch (error) {
+    console.error(`Error processing ${currentUrl}:`, error.message);
+    return { links: [], lastmod: new Date().toISOString() };
+  }
+}
+
+function calculatePriority(depth) {
+  const priority = 1.0 - depth * 0.1;
+  return Math.max(0.1, priority).toFixed(1);
 }
 
 // HTTP request function with enhanced CSR detection
 async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
-  const response = await axios.get(currentUrl);
+  const response = await axios.get(currentUrl, {
+    headers: { "Accept-Encoding": "gzip, deflate, br" },
+  });
   const html = response.data;
   const root = parse(html);
+
+  const lastmod = response.headers["last-modified"] || new Date().toISOString();
 
   // CSR detection using the provided configuration thresholds
   const isCSR = detectCSR(html, root, cfg);
 
   if (!isCSR) {
     const links = extractLinks(root, baseUrl, currentUrl);
-    return { links, isCSR: false };
+    return { links, isCSR: false, lastmod };
   }
-  return { links: [], isCSR: true };
+  return { links: [], isCSR: true, lastmod };
 }
 
 // Puppeteer-based link extraction with enhanced wait conditions
@@ -259,16 +289,65 @@ function isValidUrl(url) {
   return !skipExtensions.some((ext) => url.toLowerCase().endsWith(ext));
 }
 
+// Fetches and parses the robots.txt file
+async function getRobotsTxtRules(baseUrl) {
+  const robotsUrl = `${baseUrl}/robots.txt`;
+  if (config.logging.verbose)
+    console.log(`Fetching robots.txt from: ${robotsUrl}`);
+
+  try {
+    const response = await axios.get(robotsUrl);
+    const rules = parseRobotsTxt(response.data);
+    if (config.logging.verbose)
+      console.log(`Found ${rules.disallowed.length} disallowed rules.`);
+    return rules.disallowed;
+  } catch (error) {
+    if (error.response && error.response.status === 404) {
+      if (config.logging.verbose)
+        console.log("No robots.txt found. Crawling all pages.");
+    } else {
+      console.error(`Error fetching or parsing robots.txt:`, error.message);
+    }
+    return [];
+  }
+}
+
+// Parses the content of a robots.txt file
+function parseRobotsTxt(content) {
+  const rules = {
+    disallowed: [],
+  };
+  let isForAllAgents = false;
+
+  content.split(/\r?\n/).forEach((line) => {
+    const trimmedLine = line.trim();
+    if (trimmedLine.toLowerCase().startsWith("user-agent:")) {
+      isForAllAgents = trimmedLine.substring(11).trim() === "*";
+    } else if (
+      isForAllAgents &&
+      trimmedLine.toLowerCase().startsWith("disallow:")
+    ) {
+      const path = trimmedLine.substring(9).trim();
+      if (path) {
+        rules.disallowed.push(path);
+      }
+    }
+  });
+
+  return rules;
+}
+
 // Generate an XML sitemap from the list of URLs
-function generateSitemap(urls) {
-  const date = new Date().toISOString();
+
+function generateSitemap(sitemapData) {
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
   xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
 
-  for (const url of urls) {
+  for (const [url, { lastmod, priority }] of sitemapData.entries()) {
     xml += "  <url>\n";
     xml += `    <loc>${url}</loc>\n`;
-    xml += `    <lastmod>${date}</lastmod>\n`;
+    xml += `    <lastmod>${new Date(lastmod).toISOString()}</lastmod>\n`;
+    xml += `    <priority>${priority}</priority>\n`;
     xml += "  </url>\n";
   }
 
@@ -277,9 +356,16 @@ function generateSitemap(urls) {
 }
 
 // Main entry point for generating the sitemap
-export async function createSitemap(websiteUrl, maxPages = 100) {
+export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
   const baseUrl = new URL(websiteUrl).origin;
-  const urls = await crawlSite(baseUrl, maxPages, config);
-  if (config.logging.verbose) console.log(`Crawled ${urls.length} pages`);
-  return generateSitemap(urls);
+  const disallowedPaths = await getRobotsTxtRules(baseUrl);
+  const sitemapData = await crawlSite(
+    baseUrl,
+    maxPages,
+    config,
+    onProgress,
+    disallowedPaths
+  );
+  if (config.logging.verbose) console.log(`Crawled ${sitemapData.size} pages`);
+  return generateSitemap(sitemapData);
 }
