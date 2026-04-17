@@ -2,6 +2,103 @@ import axios from "axios";
 import puppeteer from "puppeteer";
 import { parse } from "node-html-parser";
 
+async function fetchAndParseSitemap(sitemapUrl) {
+  try {
+    const response = await axios.get(sitemapUrl, {
+      headers: {
+        Accept: "application/xml, text/xml, */*",
+        "Accept-Encoding": "gzip, deflate, br",
+      },
+      timeout: 30000,
+    });
+
+    const xml = response.data;
+
+    if (xml.includes("<sitemapindex")) {
+      return await parseSitemapIndex(xml);
+    }
+
+    return parseSitemap(xml);
+  } catch (error) {
+    console.error(`Error fetching sitemap from ${sitemapUrl}:`, error.message);
+    return [];
+  }
+}
+
+function parseSitemap(xml) {
+  const urls = [];
+  const locMatches = xml.match(/<loc>(.*?)<\/loc>/g) || [];
+
+  for (const match of locMatches) {
+    const url = match.replace(/<\/?loc>/g, "").trim();
+    if (url && isValidUrl(url)) {
+      urls.push(url);
+    }
+  }
+
+  return urls;
+}
+
+async function parseSitemapIndex(xml) {
+  const sitemapUrls = [];
+  const locMatches = xml.match(/<loc>(.*?)<\/loc>/g) || [];
+
+  for (const match of locMatches) {
+    const url = match.replace(/<\/?loc>/g, "").trim();
+    if (url) {
+      sitemapUrls.push(url);
+    }
+  }
+
+  const allUrls = [];
+  for (const sitemapUrl of sitemapUrls) {
+    const urls = await fetchAndParseSitemap(sitemapUrl);
+    allUrls.push(...urls);
+  }
+
+  return allUrls;
+}
+
+async function discoverSitemap(baseUrl) {
+  const commonPaths = [
+    "/sitemap.xml",
+    "/sitemap_index.xml",
+    "/sitemap-index.xml",
+    "/post-sitemap.xml",
+    "/page-sitemap.xml",
+  ];
+
+  try {
+    const robotsResponse = await axios.get(`${baseUrl}/robots.txt`, {
+      timeout: 5000,
+    });
+    const robotsContent = robotsResponse.data;
+    const sitemapMatches =
+      robotsContent.match(/Sitemap:\s*(https?:\/\/[^\s]+)/gi) || [];
+
+    for (const match of sitemapMatches) {
+      const sitemapUrl = match.replace(/Sitemap:\s*/i, "").trim();
+      commonPaths.unshift(new URL(sitemapUrl, baseUrl).pathname);
+    }
+  } catch (error) {
+    // robots.txt not found or error, continue with common paths
+  }
+
+  for (const path of commonPaths) {
+    try {
+      const sitemapUrl = `${baseUrl}${path}`;
+      const response = await axios.head(sitemapUrl, { timeout: 5000 });
+      if (response.status === 200) {
+        return sitemapUrl;
+      }
+    } catch (error) {
+      // Continue to next path
+    }
+  }
+
+  return null;
+}
+
 // Configuration object for thresholds and logging
 const config = {
   csr: {
@@ -21,15 +118,14 @@ const config = {
   },
 };
 
-const CONCURRENCY = 2;
+const CONCURRENCY = 5;
 
-// Main crawling function
 async function crawlSite(
   baseUrl,
   maxPages = 100,
   cfg = config,
   onProgress,
-  disallowedPaths = []
+  disallowedPaths = [],
 ) {
   const sitemapData = new Map();
   const queue = [{ url: baseUrl, depth: 0 }];
@@ -61,7 +157,7 @@ async function crawlSite(
               baseUrl,
               depth,
               cfg,
-              getBrowser
+              getBrowser,
             );
 
             const priority = calculatePriority(depth);
@@ -69,7 +165,7 @@ async function crawlSite(
 
             for (const link of links) {
               const isDisallowed = disallowedPaths.some((path) =>
-                new URL(link).pathname.startsWith(path)
+                new URL(link).pathname.startsWith(path),
               );
               if (
                 !visited.has(link) &&
@@ -83,7 +179,7 @@ async function crawlSite(
           } catch (error) {
             console.error(`Error crawling ${url}:`, error.message);
           }
-        })
+        }),
       );
     }
   } finally {
@@ -96,27 +192,21 @@ async function crawlSite(
 }
 
 async function crawlUrl(currentUrl, baseUrl, depth, cfg, getBrowser) {
-  if (cfg.logging.verbose)
-    console.log(`Crawling: ${currentUrl} (depth: ${depth})`);
-
   try {
     const { links, isCSR, lastmod } = await getLinksWithHTTP(
       baseUrl,
       currentUrl,
-      cfg
+      cfg,
     );
 
     let finalLinks = links;
     if (isCSR || links.length === 0) {
-      if (cfg.logging.verbose && !isCSR) {
-        console.log(`No links via HTTP; trying Puppeteer for ${currentUrl}`);
-      }
       const browser = await getBrowser();
       const puppeteerLinks = await getLinksWithPuppeteer(
         browser,
         baseUrl,
         currentUrl,
-        cfg
+        cfg,
       );
       finalLinks = [...new Set([...links, ...puppeteerLinks])];
     }
@@ -133,7 +223,6 @@ function calculatePriority(depth) {
   return Math.max(0.1, priority).toFixed(1);
 }
 
-// HTTP request function with enhanced CSR detection
 async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
   const response = await axios.get(currentUrl, {
     headers: { "Accept-Encoding": "gzip, deflate, br" },
@@ -143,7 +232,6 @@ async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
 
   const lastmod = response.headers["last-modified"] || new Date().toISOString();
 
-  // CSR detection using the provided configuration thresholds
   const isCSR = detectCSR(html, root, cfg);
 
   if (!isCSR) {
@@ -153,7 +241,6 @@ async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
   return { links: [], isCSR: true, lastmod };
 }
 
-// Puppeteer-based link extraction with enhanced wait conditions
 async function getLinksWithPuppeteer(browser, baseUrl, currentUrl, cfg) {
   const page = await browser.newPage();
 
@@ -163,34 +250,48 @@ async function getLinksWithPuppeteer(browser, baseUrl, currentUrl, cfg) {
       timeout: cfg.puppeteer.gotoTimeout,
     });
 
-    // Wait for multiple selectors that indicate the page is loaded:
-    // any <a> tag or specific root markers used by CSR frameworks
     const selectors = "a," + cfg.csr.rootSelectors.join(",");
     try {
       await page.waitForSelector(selectors, {
         timeout: cfg.puppeteer.waitForSelectorsTimeout,
       });
     } catch (e) {
-      if (cfg.logging.verbose)
-        console.log(
-          `Timeout waiting for selectors (${selectors}) on ${currentUrl}`
-        );
+      // Selector timeout - continue anyway
     }
 
-    // Extract all links from the page
     const links = await page.evaluate((baseUrl) => {
-      const linkElements = document.querySelectorAll("a[href]");
       const urls = [];
+
+      const linkElements = document.querySelectorAll("a[href]");
       for (const element of linkElements) {
         try {
           const href = element.getAttribute("href");
           if (!href) continue;
           const url = new URL(href, window.location.href);
-          if (url.origin === baseUrl && !url.hash) {
+          if (url.origin === baseUrl) {
+            url.hash = "";
+            url.search = "";
             urls.push(url.href);
           }
         } catch {}
       }
+
+      const linkTags = document.querySelectorAll(
+        'link[rel=\"canonical\"], link[rel=\"alternate\"]',
+      );
+      for (const link of linkTags) {
+        try {
+          const href = link.getAttribute("href");
+          if (!href) continue;
+          const url = new URL(href, window.location.href);
+          if (url.origin === baseUrl) {
+            url.hash = "";
+            url.search = "";
+            urls.push(url.href);
+          }
+        } catch {}
+      }
+
       return [...new Set(urls)];
     }, baseUrl);
 
@@ -200,7 +301,6 @@ async function getLinksWithPuppeteer(browser, baseUrl, currentUrl, cfg) {
   }
 }
 
-// CSR detection with configurable thresholds and additional markers
 function detectCSR(html, root, cfg) {
   const {
     minimalContentLength,
@@ -213,11 +313,9 @@ function detectCSR(html, root, cfg) {
   const body = root.querySelector("body");
   const bodyChildCount = body ? body.childNodes.length : 0;
 
-  // Basic checks
   const isShortHtml = html.length < minimalContentLength;
   const hasEmptyBody = bodyChildCount < minimalChildNodes;
 
-  // Count <script> tags and measure ratio
   const scriptElements = root.querySelectorAll("script");
   const scriptMatches = html.match(/<script/g);
   const scriptCount = scriptElements.length;
@@ -225,12 +323,10 @@ function detectCSR(html, root, cfg) {
   const hasManyScripts = scriptCount > scriptCountThreshold;
   const lowContentRatio = ratio < contentScriptRatio;
 
-  // Check for specific root selectors (e.g. #root, #__next)
   const hasRootDiv = rootSelectors.some(
-    (selector) => root.querySelector(selector) !== null
+    (selector) => root.querySelector(selector) !== null,
   );
 
-  // Look for loading/spinner indicators in the raw HTML
   const hasLoadingIndicator =
     html.includes("loading") || html.includes("spinner");
 
@@ -242,23 +338,41 @@ function detectCSR(html, root, cfg) {
   );
 }
 
-// Extract and normalize links from the HTML document
 function extractLinks(root, baseUrl, currentUrl) {
   const links = [];
   const currentUrlObj = new URL(currentUrl);
   const baseUrlObj = new URL(baseUrl);
-  const anchors = root.querySelectorAll("a");
 
+  const anchors = root.querySelectorAll("a");
   for (const anchor of anchors) {
     const href = anchor.getAttribute("href");
     if (!href) continue;
 
     try {
-      // Resolve relative URLs and check for same-domain
       const url = new URL(href, currentUrl);
       if (url.hostname === baseUrlObj.hostname) {
-        url.hash = ""; // Remove hash
+        url.hash = "";
+        url.search = "";
         if (isValidUrl(url.href) && url.pathname !== currentUrlObj.pathname) {
+          links.push(url.href);
+        }
+      }
+    } catch {}
+  }
+
+  const linkTags = root.querySelectorAll(
+    'link[rel="canonical"], link[rel="alternate"]',
+  );
+  for (const link of linkTags) {
+    const href = link.getAttribute("href");
+    if (!href) continue;
+
+    try {
+      const url = new URL(href, currentUrl);
+      if (url.hostname === baseUrlObj.hostname) {
+        url.hash = "";
+        url.search = "";
+        if (isValidUrl(url.href)) {
           links.push(url.href);
         }
       }
@@ -268,7 +382,6 @@ function extractLinks(root, baseUrl, currentUrl) {
   return [...new Set(links)];
 }
 
-// Validate URL based on its extension to avoid non-HTML resources
 function isValidUrl(url) {
   const skipExtensions = [
     ".jpg",
@@ -289,30 +402,21 @@ function isValidUrl(url) {
   return !skipExtensions.some((ext) => url.toLowerCase().endsWith(ext));
 }
 
-// Fetches and parses the robots.txt file
 async function getRobotsTxtRules(baseUrl) {
   const robotsUrl = `${baseUrl}/robots.txt`;
-  if (config.logging.verbose)
-    console.log(`Fetching robots.txt from: ${robotsUrl}`);
 
   try {
     const response = await axios.get(robotsUrl);
     const rules = parseRobotsTxt(response.data);
-    if (config.logging.verbose)
-      console.log(`Found ${rules.disallowed.length} disallowed rules.`);
     return rules.disallowed;
   } catch (error) {
-    if (error.response && error.response.status === 404) {
-      if (config.logging.verbose)
-        console.log("No robots.txt found. Crawling all pages.");
-    } else {
+    if (error.response && error.response.status !== 404) {
       console.error(`Error fetching or parsing robots.txt:`, error.message);
     }
     return [];
   }
 }
 
-// Parses the content of a robots.txt file
 function parseRobotsTxt(content) {
   const rules = {
     disallowed: [],
@@ -337,8 +441,6 @@ function parseRobotsTxt(content) {
   return rules;
 }
 
-// Generate an XML sitemap from the list of URLs
-
 function generateSitemap(sitemapData) {
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
   xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
@@ -355,17 +457,173 @@ function generateSitemap(sitemapData) {
   return xml;
 }
 
-// Main entry point for generating the sitemap
 export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
   const baseUrl = new URL(websiteUrl).origin;
   const disallowedPaths = await getRobotsTxtRules(baseUrl);
-  const sitemapData = await crawlSite(
+
+  const sitemapUrl = await discoverSitemap(baseUrl);
+  let sitemapUrls = [];
+
+  if (sitemapUrl) {
+    sitemapUrls = await fetchAndParseSitemap(sitemapUrl);
+
+    if (onProgress) {
+      onProgress(
+        `Sitemap: ${sitemapUrls.length} URLs | Starting crawl for more...`,
+        0,
+      );
+    }
+  }
+
+  if (onProgress) {
+    onProgress(
+      `Crawling from homepage to find more pages...`,
+      sitemapUrls.length,
+    );
+  }
+
+  const crawledData = await crawlSite(
     baseUrl,
     maxPages,
     config,
-    onProgress,
-    disallowedPaths
+    (url, count) => {
+      if (onProgress) {
+        onProgress(
+          `Sitemap: ${sitemapUrls.length} | Crawled: ${count}`,
+          sitemapUrls.length + count,
+        );
+      }
+    },
+    disallowedPaths,
   );
-  if (config.logging.verbose) console.log(`Crawled ${sitemapData.size} pages`);
-  return generateSitemap(sitemapData);
+
+  const allUrls = new Set([...sitemapUrls, ...Array.from(crawledData.keys())]);
+
+  if (onProgress) {
+    onProgress(
+      `Merging results: ${allUrls.size} unique URLs found`,
+      allUrls.size,
+    );
+  }
+
+  const finalData = new Map(crawledData);
+  const uncrawledUrls = sitemapUrls.filter((url) => !finalData.has(url));
+
+  if (uncrawledUrls.length > 0) {
+    const additionalData = await processSitemapUrls(
+      uncrawledUrls,
+      baseUrl,
+      maxPages - finalData.size,
+      config,
+      (url, count) => {
+        if (onProgress) {
+          onProgress(
+            `Processing sitemap URLs: ${count}/${uncrawledUrls.length}`,
+            finalData.size + count,
+          );
+        }
+      },
+      disallowedPaths,
+    );
+
+    for (const [url, data] of additionalData.entries()) {
+      finalData.set(url, data);
+    }
+  }
+
+  if (onProgress) {
+    onProgress(`Complete! ${finalData.size} pages processed`, finalData.size);
+  }
+
+  return generateSitemap(finalData);
+}
+
+async function processSitemapUrls(
+  urls,
+  baseUrl,
+  maxPages,
+  cfg,
+  onProgress,
+  disallowedPaths,
+) {
+  const sitemapData = new Map();
+  let puppeteerBrowser = null;
+
+  const getBrowser = async () => {
+    if (!puppeteerBrowser) {
+      puppeteerBrowser = await puppeteer.launch({ headless: true });
+    }
+    return puppeteerBrowser;
+  };
+
+  try {
+    const urlsToProcess = urls
+      .filter((url) => {
+        const urlObj = new URL(url);
+        const isDisallowed = disallowedPaths.some((path) =>
+          urlObj.pathname.startsWith(path),
+        );
+        return !isDisallowed && urlObj.origin === baseUrl;
+      })
+      .slice(0, maxPages);
+
+    for (let i = 0; i < urlsToProcess.length; i += CONCURRENCY) {
+      const batch = urlsToProcess.slice(i, i + CONCURRENCY);
+
+      await Promise.all(
+        batch.map(async (url) => {
+          try {
+            if (onProgress) {
+              onProgress(url, sitemapData.size + 1);
+            }
+
+            const { lastmod } = await getUrlMetadata(url, cfg, getBrowser);
+            const depth = new URL(url).pathname
+              .split("/")
+              .filter(Boolean).length;
+            const priority = calculatePriority(depth);
+
+            sitemapData.set(url, { lastmod, priority });
+          } catch (error) {
+            console.error(`Error processing ${url}:`, error.message);
+            sitemapData.set(url, {
+              lastmod: new Date().toISOString(),
+              priority: "0.5",
+            });
+          }
+        }),
+      );
+    }
+  } finally {
+    if (puppeteerBrowser) {
+      await puppeteerBrowser.close();
+    }
+  }
+
+  return sitemapData;
+}
+
+async function getUrlMetadata(url) {
+  try {
+    const response = await axios.head(url, {
+      timeout: 5000,
+      headers: { "Accept-Encoding": "gzip, deflate, br" },
+    });
+
+    const lastmod =
+      response.headers["last-modified"] || new Date().toISOString();
+    return { lastmod };
+  } catch (error) {
+    try {
+      const response = await axios.get(url, {
+        timeout: 10000,
+        headers: { "Accept-Encoding": "gzip, deflate, br" },
+      });
+      const lastmod =
+        response.headers["last-modified"] || new Date().toISOString();
+      return { lastmod };
+    } catch (innerError) {
+      return { lastmod: new Date().toISOString() };
+    }
+  }
 }
