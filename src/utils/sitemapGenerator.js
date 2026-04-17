@@ -1,6 +1,7 @@
 import axios from "axios";
 import puppeteer from "puppeteer";
 import { parse } from "node-html-parser";
+import { SitemapStats } from "./statsLogger.js";
 
 async function fetchAndParseSitemap(sitemapUrl) {
   try {
@@ -126,6 +127,7 @@ async function crawlSite(
   cfg = config,
   onProgress,
   disallowedPaths = [],
+  stats = null,
 ) {
   const sitemapData = new Map();
   const queue = [{ url: baseUrl, depth: 0 }];
@@ -163,6 +165,11 @@ async function crawlSite(
             const priority = calculatePriority(depth);
             sitemapData.set(url, { lastmod, priority });
 
+            if (stats) {
+              stats.incrementCrawledPages();
+              stats.updateDepthInfo(depth);
+            }
+
             for (const link of links) {
               const isDisallowed = disallowedPaths.some((path) =>
                 new URL(link).pathname.startsWith(path),
@@ -178,6 +185,9 @@ async function crawlSite(
             }
           } catch (error) {
             console.error(`Error crawling ${url}:`, error.message);
+            if (stats) {
+              stats.addError(url, error.message);
+            }
           }
         }),
       );
@@ -227,7 +237,18 @@ async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
   const response = await axios.get(currentUrl, {
     headers: { "Accept-Encoding": "gzip, deflate, br" },
   });
-  const html = response.data;
+
+  const contentType = response.headers["content-type"] || "";
+  if (contentType.includes("application/json")) {
+    return { links: [], isCSR: false, lastmod: new Date().toISOString() };
+  }
+
+  let html = response.data;
+
+  if (typeof html !== "string") {
+    html = String(html);
+  }
+
   const root = parse(html);
 
   const lastmod = response.headers["last-modified"] || new Date().toISOString();
@@ -399,7 +420,20 @@ function isValidUrl(url) {
     ".mp3",
     ".avif",
   ];
-  return !skipExtensions.some((ext) => url.toLowerCase().endsWith(ext));
+
+  const skipPatterns = ["/wp-json/", "/api/", "/rest/", "?rest_route="];
+
+  const urlLower = url.toLowerCase();
+
+  if (skipExtensions.some((ext) => urlLower.endsWith(ext))) {
+    return false;
+  }
+
+  if (skipPatterns.some((pattern) => url.includes(pattern))) {
+    return false;
+  }
+
+  return true;
 }
 
 async function getRobotsTxtRules(baseUrl) {
@@ -458,14 +492,17 @@ function generateSitemap(sitemapData) {
 }
 
 export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
+  const stats = new SitemapStats(websiteUrl);
   const baseUrl = new URL(websiteUrl).origin;
   const disallowedPaths = await getRobotsTxtRules(baseUrl);
+  stats.setRobotsTxtInfo(disallowedPaths);
 
   const sitemapUrl = await discoverSitemap(baseUrl);
   let sitemapUrls = [];
 
   if (sitemapUrl) {
     sitemapUrls = await fetchAndParseSitemap(sitemapUrl);
+    stats.setSitemapPages(sitemapUrls.length);
 
     if (onProgress) {
       onProgress(
@@ -488,13 +525,11 @@ export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
     config,
     (url, count) => {
       if (onProgress) {
-        onProgress(
-          `Sitemap: ${sitemapUrls.length} | Crawled: ${count}`,
-          sitemapUrls.length + count,
-        );
+        onProgress(url, sitemapUrls.length + count);
       }
     },
     disallowedPaths,
+    stats,
   );
 
   const allUrls = new Set([...sitemapUrls, ...Array.from(crawledData.keys())]);
@@ -531,9 +566,24 @@ export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
     }
   }
 
+  const sitemapUrlsSet = new Set(sitemapUrls);
+  const crawledUrlsSet = new Set(crawledData.keys());
+
+  const overlapPages = Array.from(sitemapUrlsSet).filter((url) =>
+    crawledUrlsSet.has(url),
+  ).length;
+  const sitemapOnlyPages = sitemapUrls.length - overlapPages;
+  const crawledOnlyPages = crawledData.size - overlapPages;
+
+  stats.setPageBreakdown(sitemapOnlyPages, crawledOnlyPages, overlapPages);
+  stats.setTotalPages(finalData.size);
+
   if (onProgress) {
     onProgress(`Complete! ${finalData.size} pages processed`, finalData.size);
   }
+
+  await stats.save();
+  console.log(stats.getSummary());
 
   return generateSitemap(finalData);
 }
