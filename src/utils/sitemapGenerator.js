@@ -147,8 +147,6 @@ async function crawlSite(
 
       await Promise.all(
         batch.map(async ({ url, depth }) => {
-          if (sitemapData.size >= maxPages) return;
-
           try {
             if (onProgress) {
               onProgress(url, sitemapData.size + 1);
@@ -162,25 +160,27 @@ async function crawlSite(
               getBrowser,
             );
 
-            const priority = calculatePriority(depth);
-            sitemapData.set(url, { lastmod, priority });
+            if (sitemapData.size < maxPages) {
+              const priority = calculatePriority(depth);
+              sitemapData.set(url, { lastmod, priority });
 
-            if (stats) {
-              stats.incrementCrawledPages();
-              stats.updateDepthInfo(depth);
-            }
+              if (stats) {
+                stats.incrementCrawledPages();
+                stats.updateDepthInfo(depth);
+              }
 
-            for (const link of links) {
-              const isDisallowed = disallowedPaths.some((path) =>
-                new URL(link).pathname.startsWith(path),
-              );
-              if (
-                !visited.has(link) &&
-                sitemapData.size < maxPages &&
-                !isDisallowed
-              ) {
-                visited.add(link);
-                queue.push({ url: link, depth: depth + 1 });
+              for (const link of links) {
+                const isDisallowed = disallowedPaths.some((path) =>
+                  new URL(link).pathname.startsWith(path),
+                );
+                if (
+                  !visited.has(link) &&
+                  sitemapData.size < maxPages &&
+                  !isDisallowed
+                ) {
+                  visited.add(link);
+                  queue.push({ url: link, depth: depth + 1 });
+                }
               }
             }
           } catch (error) {
@@ -196,6 +196,11 @@ async function crawlSite(
     if (puppeteerBrowser) {
       await puppeteerBrowser.close();
     }
+  }
+
+  if (sitemapData.size > maxPages) {
+    const entries = Array.from(sitemapData.entries()).slice(0, maxPages);
+    return new Map(entries);
   }
 
   return sitemapData;
@@ -544,24 +549,23 @@ export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
   const finalData = new Map(crawledData);
   const uncrawledUrls = sitemapUrls.filter((url) => !finalData.has(url));
 
-  if (uncrawledUrls.length > 0) {
+  if (uncrawledUrls.length > 0 && finalData.size < maxPages) {
+    const remainingSlots = maxPages - finalData.size;
     const additionalData = await processSitemapUrls(
       uncrawledUrls,
       baseUrl,
-      maxPages - finalData.size,
+      remainingSlots,
       config,
       (url, count) => {
         if (onProgress) {
-          onProgress(
-            `Processing sitemap URLs: ${count}/${uncrawledUrls.length}`,
-            finalData.size + count,
-          );
+          onProgress(url, finalData.size + count);
         }
       },
       disallowedPaths,
     );
 
     for (const [url, data] of additionalData.entries()) {
+      if (finalData.size >= maxPages) break;
       finalData.set(url, data);
     }
   }
@@ -633,13 +637,17 @@ async function processSitemapUrls(
               .filter(Boolean).length;
             const priority = calculatePriority(depth);
 
-            sitemapData.set(url, { lastmod, priority });
+            if (sitemapData.size < maxPages) {
+              sitemapData.set(url, { lastmod, priority });
+            }
           } catch (error) {
             console.error(`Error processing ${url}:`, error.message);
-            sitemapData.set(url, {
-              lastmod: new Date().toISOString(),
-              priority: "0.5",
-            });
+            if (sitemapData.size < maxPages) {
+              sitemapData.set(url, {
+                lastmod: new Date().toISOString(),
+                priority: "0.5",
+              });
+            }
           }
         }),
       );
@@ -648,6 +656,11 @@ async function processSitemapUrls(
     if (puppeteerBrowser) {
       await puppeteerBrowser.close();
     }
+  }
+
+  if (sitemapData.size > maxPages) {
+    const entries = Array.from(sitemapData.entries()).slice(0, maxPages);
+    return new Map(entries);
   }
 
   return sitemapData;
