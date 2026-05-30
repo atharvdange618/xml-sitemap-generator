@@ -27,12 +27,12 @@ export async function GET(request) {
         };
 
         try {
-          const sitemap = await createSitemap(
+          const { sitemap, stats } = await createSitemap(
             url,
             parseInt(maxPages, 10) || 100,
             onProgress,
           );
-          const doneData = { type: "done", sitemap };
+          const doneData = { type: "done", sitemap, stats };
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(doneData)}\n\n`),
           );

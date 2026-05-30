@@ -589,7 +589,10 @@ export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
   await stats.save();
   console.log(stats.getSummary());
 
-  return generateSitemap(finalData);
+  return {
+    sitemap: generateSitemap(finalData),
+    stats: stats.toJSON(),
+  };
 }
 
 async function processSitemapUrls(
