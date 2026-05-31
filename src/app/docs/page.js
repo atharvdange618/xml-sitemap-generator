@@ -271,7 +271,7 @@ const CopyButton = ({ text }) => {
   return (
     <button
       onClick={handleCopy}
-      className="absolute top-3 right-3 p-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700/80 border border-neutral-700/80 text-neutral-400 hover:text-neutral-200 transition-all flex items-center gap-1.5 text-xs font-sans select-none"
+      className="absolute top-3 right-3 p-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700/80 border border-neutral-700/80 text-neutral-300 hover:text-neutral-200 transition-all flex items-center gap-1.5 text-sm font-sans select-none"
     >
       {copied ? (
         <>
@@ -292,12 +292,12 @@ const CodeBlock = ({ code, language }) => {
   return (
     <div className="relative group bg-neutral-900/80 border border-neutral-800 rounded-lg overflow-hidden font-mono shadow-md backdrop-blur-sm">
       <div className="flex items-center justify-between px-4 py-2 bg-neutral-950/40 border-b border-neutral-800/80">
-        <span className="text-xs text-neutral-500 font-sans tracking-wide uppercase font-semibold">
+        <span className="text-sm text-neutral-400 font-sans tracking-wide uppercase font-semibold">
           {language}
         </span>
         <CopyButton text={code} />
       </div>
-      <div className="p-4 overflow-x-auto text-neutral-200 text-xs md:text-sm leading-relaxed max-h-[420px]">
+      <div className="p-4 overflow-x-auto text-neutral-200 text-sm md:text-sm leading-relaxed max-h-[420px]">
         <pre className="font-mono">{code}</pre>
       </div>
     </div>
@@ -320,7 +320,7 @@ export default function Docs() {
   const [configMaxPages, setConfigMaxPages] = useState(100);
   const [configMinLen, setConfigMinLen] = useState(200);
   const [configWaitUntil, setConfigWaitUntil] = useState("networkidle2");
-  const [configTimeout, setConfigTimeout] = useState(10000);
+  const configTimeout = 10000;
 
   const customConfigString = `const config = {
   csr: {
@@ -400,11 +400,11 @@ export default function Docs() {
       case "discovery":
         return (
           <div className="flex flex-col h-full justify-between">
-            <div className="bg-neutral-950 border border-neutral-800 rounded p-3 font-mono text-[10px] md:text-xs text-neutral-300 leading-normal space-y-1 relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-1 text-[8px] bg-neutral-850/80 text-neutral-400 rounded-bl border-l border-b border-neutral-700">
+            <div className="bg-neutral-950 border border-neutral-800 rounded p-3 font-mono text-sm md:text-sm text-neutral-300 leading-normal space-y-1 relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-1 text-[8px] bg-neutral-850/80 text-neutral-300 rounded-bl border-l border-b border-neutral-700">
                 robots.txt
               </div>
-              <div className="text-neutral-500">
+              <div className="text-neutral-400">
                 # Crawl rules for Googlebot
               </div>
               <div>User-agent: *</div>
@@ -414,7 +414,7 @@ export default function Docs() {
               </div>
               <div>Disallow: /private/</div>
             </div>
-            <div className="mt-3 bg-neutral-950/60 rounded border border-neutral-800 p-2.5 flex items-center justify-between text-xs text-neutral-400">
+            <div className="mt-3 bg-neutral-950/60 rounded border border-neutral-800 p-2.5 flex items-center justify-between text-sm text-neutral-300">
               <span className="flex items-center gap-1.5">
                 <Globe size={13} className="text-emerald-400 animate-spin" />{" "}
                 Fetching robots.txt
@@ -429,11 +429,11 @@ export default function Docs() {
         return (
           <div className="flex flex-col h-full justify-between gap-3">
             <div className="space-y-1.5">
-              <div className="text-[10px] text-neutral-500 uppercase tracking-wider font-semibold">
+              <div className="text-sm text-neutral-400 uppercase tracking-wider font-semibold">
                 Crawl Queue Stack
               </div>
               <div className="flex flex-col gap-1">
-                <div className="bg-lime-950/40 border border-lime-900/60 rounded px-2.5 py-1.5 text-xs text-lime-200 flex justify-between items-center">
+                <div className="bg-lime-950/40 border border-lime-900/60 rounded px-2.5 py-1.5 text-sm text-lime-200 flex justify-between items-center">
                   <span className="truncate font-mono">
                     https://target.com/
                   </span>
@@ -441,17 +441,17 @@ export default function Docs() {
                     Seed
                   </span>
                 </div>
-                <div className="bg-neutral-900 border border-neutral-800 rounded px-2.5 py-1.5 text-xs text-neutral-400 flex justify-between items-center">
+                <div className="bg-neutral-900 border border-neutral-800 rounded px-2.5 py-1.5 text-sm text-neutral-300 flex justify-between items-center">
                   <span className="truncate font-mono">
                     https://target.com/sitemap.xml
                   </span>
-                  <span className="text-[9px] bg-neutral-800 px-1.5 py-0.5 rounded text-neutral-400">
+                  <span className="text-[9px] bg-neutral-800 px-1.5 py-0.5 rounded text-neutral-300">
                     XML Site
                   </span>
                 </div>
               </div>
             </div>
-            <div className="text-center bg-lime-500/10 border border-lime-500/20 rounded p-2 text-xs text-lime-300">
+            <div className="text-center bg-lime-500/10 border border-lime-500/20 rounded p-2 text-sm text-lime-300">
               Queue loaded • 2 initial targets
             </div>
           </div>
@@ -459,7 +459,7 @@ export default function Docs() {
       case "concurrent":
         return (
           <div className="space-y-3">
-            <div className="text-[10px] text-neutral-500 uppercase tracking-wider font-semibold">
+            <div className="text-sm text-neutral-400 uppercase tracking-wider font-semibold">
               5 Concurrent Thread Pools
             </div>
             <div className="grid grid-cols-5 gap-1.5">
@@ -468,19 +468,19 @@ export default function Docs() {
                   key={id}
                   className="flex flex-col items-center p-1.5 bg-neutral-900 border border-neutral-800 rounded"
                 >
-                  <span className="text-[9px] text-neutral-500 font-mono">
+                  <span className="text-[9px] text-neutral-400 font-mono">
                     #0{id}
                   </span>
                   <div
                     className={`w-2 h-2 rounded-full mt-1.5 ${id <= 3 ? "bg-emerald-500 animate-ping" : id === 4 ? "bg-amber-400" : "bg-neutral-600"}`}
                   />
-                  <span className="text-[8px] text-neutral-400 mt-1.5 font-medium">
+                  <span className="text-[8px] text-neutral-300 mt-1.5 font-medium">
                     {id <= 3 ? "Active" : id === 4 ? "Wait" : "Idle"}
                   </span>
                 </div>
               ))}
             </div>
-            <div className="text-[11px] text-neutral-400 bg-neutral-950/40 p-2 rounded border border-neutral-800 flex justify-between">
+            <div className="text-sm text-neutral-300 bg-neutral-950/40 p-2 rounded border border-neutral-800 flex justify-between">
               <span>
                 Concurrency Active:{" "}
                 <strong className="text-emerald-400">3/5</strong>
@@ -494,7 +494,7 @@ export default function Docs() {
       case "detection":
         return (
           <div className="flex flex-col h-full justify-between gap-2.5">
-            <div className="bg-neutral-950 border border-neutral-800 rounded p-3 font-mono text-[10px] text-neutral-400 space-y-1">
+            <div className="bg-neutral-950 border border-neutral-800 rounded p-3 font-mono text-sm text-neutral-300 space-y-1">
               <div>&lt;body&gt;</div>
               <div className="bg-neutral-900/60 px-1.5 py-0.5 border-l border-neutral-700">
                 &lt;div id=&quot;root&quot;&gt;&lt;/div&gt;
@@ -502,11 +502,11 @@ export default function Docs() {
               <div>&lt;script src=&quot;/app.js&quot;&gt;&lt;/script&gt;</div>
               <div>&lt;/body&gt;</div>
             </div>
-            <div className="border border-amber-900/30 bg-amber-950/10 rounded p-2 text-xs flex flex-col gap-1">
+            <div className="border border-amber-900/30 bg-amber-950/10 rounded p-2 text-sm flex flex-col gap-1">
               <div className="text-amber-400 font-medium flex items-center gap-1.5">
                 <Cpu size={12} className="animate-pulse" /> CSR System Flagged
               </div>
-              <p className="text-[10px] text-neutral-400 leading-tight">
+              <p className="text-sm text-neutral-300 leading-tight">
                 Length &lt; 200, empty body with framework selector root.
                 Triggering Puppeteer renderer.
               </p>
@@ -516,22 +516,24 @@ export default function Docs() {
       case "extraction":
         return (
           <div className="flex flex-col h-full justify-between">
-            <div className="bg-neutral-950 border border-neutral-800 rounded-md p-2.5 font-mono text-[10px] text-neutral-300 space-y-1">
-              <div className="text-neutral-500">// Scraped Anchor Nodes</div>
+            <div className="bg-neutral-950 border border-neutral-800 rounded-md p-2.5 font-mono text-sm text-neutral-300 space-y-1">
+              <div className="text-neutral-400">
+                {"// Scraped Anchor Nodes"}
+              </div>
               <div className="flex justify-between items-center text-emerald-400 bg-emerald-950/15 p-1 rounded">
                 <span>&lt;a href=&quot;/features&quot;&gt;</span>
                 <span className="text-[8px] bg-emerald-500/20 px-1 rounded text-emerald-300 font-sans">
                   EXTRACTED
                 </span>
               </div>
-              <div className="flex justify-between items-center text-neutral-400 p-1">
+              <div className="flex justify-between items-center text-neutral-300 p-1">
                 <span>&lt;a href=&quot;https://google.com&quot;&gt;</span>
-                <span className="text-[8px] bg-neutral-800 px-1 rounded text-neutral-500 font-sans">
+                <span className="text-[8px] bg-neutral-800 px-1 rounded text-neutral-400 font-sans">
                   OUT OF SCOPE
                 </span>
               </div>
             </div>
-            <div className="mt-2 text-xs text-neutral-400 flex items-center gap-1.5">
+            <div className="mt-2 text-sm text-neutral-300 flex items-center gap-1.5">
               <ArrowRight
                 size={13}
                 className="text-emerald-400 animate-bounce"
@@ -543,7 +545,7 @@ export default function Docs() {
       case "sitemap":
         return (
           <div className="flex flex-col h-full justify-between">
-            <div className="bg-neutral-950 border border-neutral-800 rounded p-2.5 font-mono text-[9px] text-neutral-400 space-y-0.5 overflow-hidden max-h-[85px]">
+            <div className="bg-neutral-950 border border-neutral-800 rounded p-2.5 font-mono text-[9px] text-neutral-300 space-y-0.5 overflow-hidden max-h-[85px]">
               <div>&lt;urlset xmlns=&quot;...&quot;&gt;</div>
               <div className="pl-3 text-neutral-300">&lt;url&gt;</div>
               <div className="pl-6">
@@ -553,7 +555,7 @@ export default function Docs() {
               <div className="pl-3 text-neutral-300">&lt;/url&gt;</div>
               <div>&lt;/urlset&gt;</div>
             </div>
-            <div className="mt-2 bg-emerald-500/10 border border-emerald-500/20 rounded p-2 text-center text-xs text-emerald-400 font-medium">
+            <div className="mt-2 bg-emerald-500/10 border border-emerald-500/20 rounded p-2 text-center text-sm text-emerald-400 font-medium">
               Sitemap XML Compiled & Ready
             </div>
           </div>
@@ -601,9 +603,11 @@ export default function Docs() {
   const depthInfo = getDepthDescription(depthInput);
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-200 flex flex-col font-sans selection:bg-emerald-500/20 selection:text-emerald-300 relative overflow-hidden">
-      <div className="absolute top-[-200px] right-[-200px] w-[500px] h-[500px] rounded-full bg-emerald-500/5 blur-[130px] pointer-events-none" />
-      <div className="absolute bottom-[200px] left-[-300px] w-[600px] h-[600px] rounded-full bg-emerald-500/3 blur-[150px] pointer-events-none" />
+    <div className="min-h-screen bg-neutral-950 text-neutral-200 flex flex-col font-sans selection:bg-emerald-500/20 selection:text-emerald-300 relative">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute top-[-200px] right-[-200px] w-[500px] h-[500px] rounded-full bg-emerald-500/5 blur-[130px]" />
+        <div className="absolute bottom-[200px] left-[-300px] w-[600px] h-[600px] rounded-full bg-emerald-500/3 blur-[150px]" />
+      </div>
 
       <header className="sticky top-0 z-40 w-full border-b border-neutral-900 bg-neutral-950/70 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 flex justify-between items-center">
@@ -619,7 +623,7 @@ export default function Docs() {
           <nav className="hidden md:flex items-center gap-6">
             <Link
               href="/"
-              className="text-sm text-neutral-400 hover:text-neutral-200 transition-colors"
+              className="text-sm text-neutral-300 hover:text-neutral-200 transition-colors"
             >
               Generator
             </Link>
@@ -633,7 +637,7 @@ export default function Docs() {
               href="https://github.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm text-neutral-400 hover:text-neutral-200 transition-colors flex items-center gap-1.5"
+              className="text-sm text-neutral-300 hover:text-neutral-200 transition-colors flex items-center gap-1.5"
             >
               GitHub <ExternalLink size={12} />
             </a>
@@ -641,7 +645,7 @@ export default function Docs() {
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-1.5 rounded-md hover:bg-neutral-900 border border-neutral-800/40 text-neutral-400 hover:text-white"
+            className="md:hidden p-1.5 rounded-md hover:bg-neutral-900 border border-neutral-800/40 text-neutral-300 hover:text-white"
           >
             {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
@@ -657,7 +661,7 @@ export default function Docs() {
             className="fixed inset-x-0 top-[65px] z-30 p-4 bg-neutral-950/95 border-b border-neutral-800 shadow-xl backdrop-blur-lg flex flex-col gap-4 md:hidden"
           >
             <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-neutral-500" />
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-neutral-400" />
               <input
                 type="text"
                 placeholder="Search documentation..."
@@ -675,7 +679,7 @@ export default function Docs() {
                   className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2.5 transition-colors ${
                     activeSection === item.id
                       ? "bg-emerald-500/10 text-emerald-400 font-medium border-l-2 border-emerald-500"
-                      : "text-neutral-400 hover:bg-neutral-900/40 hover:text-neutral-200"
+                      : "text-neutral-300 hover:bg-neutral-900/40 hover:text-neutral-200"
                   }`}
                 >
                   <item.icon size={15} />
@@ -683,7 +687,7 @@ export default function Docs() {
                 </button>
               ))}
               {filteredSections.length === 0 && (
-                <p className="text-center text-xs text-neutral-500 py-4">
+                <p className="text-center text-sm text-neutral-400 py-4">
                   No sections matched your search
                 </p>
               )}
@@ -691,7 +695,7 @@ export default function Docs() {
 
             <div className="h-px bg-neutral-800/80 my-1" />
 
-            <div className="flex justify-between items-center px-3 text-xs text-neutral-400">
+            <div className="flex justify-between items-center px-3 text-sm text-neutral-300">
               <Link href="/" className="hover:text-white transition-colors">
                 Generator Homepage
               </Link>
@@ -711,28 +715,28 @@ export default function Docs() {
       <div className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-8 py-8 grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-8">
         <aside className="hidden lg:block sticky top-24 self-start max-h-[calc(100vh-120px)] flex flex-col gap-6 pr-2 border-r border-neutral-900">
           <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-neutral-500" />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-neutral-400" />
             <input
               type="text"
               placeholder="Search documentation..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-neutral-900/40 hover:bg-neutral-900/80 border border-neutral-800 rounded-lg pl-9 pr-4 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-600 focus:bg-neutral-900 transition-colors"
+              className="w-full bg-neutral-900/40 hover:bg-neutral-900/80 border border-neutral-800 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-600 focus:bg-neutral-900 transition-colors"
             />
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar">
-            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-widest px-3 mb-2 select-none">
+            <div className="text-sm font-semibold text-neutral-400 uppercase tracking-widest px-3 mb-2 select-none">
               Documentation Chapters
             </div>
             {filteredSections.map((item) => (
               <button
                 key={item.id}
                 onClick={() => scrollToSection(item.id)}
-                className={`w-full text-left px-3 py-2 rounded-md text-xs flex items-center gap-2.5 transition-all relative ${
+                className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2.5 transition-all relative ${
                   activeSection === item.id
                     ? "text-emerald-400 font-semibold"
-                    : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/30"
+                    : "text-neutral-300 hover:text-neutral-200 hover:bg-neutral-900/30"
                 }`}
               >
                 {activeSection === item.id && (
@@ -747,7 +751,7 @@ export default function Docs() {
               </button>
             ))}
             {filteredSections.length === 0 && (
-              <div className="text-center text-xs text-neutral-500 py-6 border border-dashed border-neutral-800/40 rounded-lg">
+              <div className="text-center text-sm text-neutral-400 py-6 border border-dashed border-neutral-800/40 rounded-lg">
                 No matching topics.
               </div>
             )}
@@ -756,7 +760,7 @@ export default function Docs() {
           <div className="border-t border-neutral-900 pt-4 flex flex-col gap-2">
             <Link
               href="/"
-              className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors flex items-center gap-1.5"
+              className="text-sm text-neutral-400 hover:text-neutral-300 transition-colors flex items-center gap-1.5"
             >
               <ArrowRight size={12} className="rotate-180" /> Back to generator
             </Link>
@@ -765,10 +769,10 @@ export default function Docs() {
 
         <main className="min-w-0 pb-20">
           <div className="mb-12 border-b border-neutral-800/60 pb-8">
-            <h1 className="text-4xl md:text-5xl font-light tracking-tight text-white mb-3">
+            <h1 className="text-4xl md:text-5xl  tracking-tight text-white mb-3">
               Developer Documentation
             </h1>
-            <p className="text-base md:text-lg text-neutral-400 max-w-2xl font-light">
+            <p className="text-base md:text-lg text-neutral-300 max-w-2xl ">
               Under-the-hood analysis of sitemap crawling mechanics, client-side
               rendering heuristics, priorities, and code flows.
             </p>
@@ -811,7 +815,7 @@ export default function Docs() {
                 </h2>
               </div>
 
-              <p className="text-neutral-400 text-sm mb-6 leading-relaxed">
+              <p className="text-neutral-300 text-sm mb-6 leading-relaxed">
                 The crawling algorithm proceeds through six distinct stages.
                 Select a stage in the interactive stepper below to inspect its
                 internal logic and live visual state representation:
@@ -832,21 +836,21 @@ export default function Docs() {
                         }`}
                       >
                         <div
-                          className={`shrink-0 rounded-full w-6 h-6 flex items-center justify-center text-xs font-semibold mr-3 transition-colors ${
+                          className={`shrink-0 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold mr-3 transition-colors ${
                             isActive
                               ? "bg-emerald-500 text-neutral-950"
-                              : "bg-neutral-800 text-neutral-400"
+                              : "bg-neutral-800 text-neutral-300"
                           }`}
                         >
                           {step.id}
                         </div>
                         <div className="min-w-0">
                           <h4
-                            className={`text-xs font-medium ${isActive ? "text-emerald-300" : "text-neutral-200"}`}
+                            className={`text-sm font-medium ${isActive ? "text-emerald-300" : "text-neutral-200"}`}
                           >
                             {step.title}
                           </h4>
-                          <p className="text-[10px] text-neutral-500 line-clamp-1 mt-0.5">
+                          <p className="text-sm text-neutral-400 line-clamp-1 mt-0.5">
                             {step.desc}
                           </p>
                         </div>
@@ -870,19 +874,19 @@ export default function Docs() {
                         >
                           <div className="space-y-3">
                             <div className="flex items-center justify-between">
-                              <span className="text-[10px] text-emerald-400 font-semibold tracking-wider uppercase bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-900/50">
+                              <span className="text-sm text-emerald-400 font-semibold tracking-wider uppercase bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-900/50">
                                 Stage 0{step.id} Visualizer
                               </span>
                               <step.icon
                                 size={16}
-                                className="text-neutral-500"
+                                className="text-neutral-400"
                               />
                             </div>
 
                             <h3 className="text-base font-semibold text-neutral-100">
                               {step.title}
                             </h3>
-                            <p className="text-xs text-neutral-400 leading-relaxed font-light">
+                            <p className="text-sm text-neutral-300 leading-relaxed ">
                               {step.details}
                             </p>
                           </div>
@@ -917,46 +921,46 @@ export default function Docs() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 my-6">
                   <div className="p-4 bg-neutral-900/40 border border-neutral-800/60 rounded-xl space-y-1.5 hover:border-neutral-800 transition-colors">
-                    <span className="text-xs text-emerald-400 font-semibold uppercase tracking-wider">
+                    <span className="text-sm text-emerald-400 font-semibold uppercase tracking-wider">
                       01. Short HTML
                     </span>
-                    <p className="text-[11px] text-neutral-400 leading-snug">
+                    <p className="text-sm text-neutral-300 leading-snug">
                       HTML source length less than 200 characters indicates
                       minimal initial content.
                     </p>
                   </div>
                   <div className="p-4 bg-neutral-900/40 border border-neutral-800/60 rounded-xl space-y-1.5 hover:border-neutral-800 transition-colors">
-                    <span className="text-xs text-emerald-400 font-semibold uppercase tracking-wider">
+                    <span className="text-sm text-emerald-400 font-semibold uppercase tracking-wider">
                       02. Empty Body
                     </span>
-                    <p className="text-[11px] text-neutral-400 leading-snug">
+                    <p className="text-sm text-neutral-300 leading-snug">
                       Less than 5 direct child nodes inside the body tag
                       indicates skeleton layouts.
                     </p>
                   </div>
                   <div className="p-4 bg-neutral-900/40 border border-neutral-800/60 rounded-xl space-y-1.5 hover:border-neutral-800 transition-colors">
-                    <span className="text-xs text-emerald-400 font-semibold uppercase tracking-wider">
+                    <span className="text-sm text-emerald-400 font-semibold uppercase tracking-wider">
                       03. App Markers
                     </span>
-                    <p className="text-[11px] text-neutral-400 leading-snug">
+                    <p className="text-sm text-neutral-300 leading-snug">
                       Presence of React/Next IDs like <code>#root</code> or{" "}
                       <code>#__next</code>.
                     </p>
                   </div>
                   <div className="p-4 bg-neutral-900/40 border border-neutral-800/60 rounded-xl space-y-1.5 hover:border-neutral-800 transition-colors">
-                    <span className="text-xs text-emerald-400 font-semibold uppercase tracking-wider">
+                    <span className="text-sm text-emerald-400 font-semibold uppercase tracking-wider">
                       04. Script Heavy
                     </span>
-                    <p className="text-[11px] text-neutral-400 leading-snug">
+                    <p className="text-sm text-neutral-300 leading-snug">
                       Over 10 script tags coupled with low text-to-code ratio
                       parameters.
                     </p>
                   </div>
                   <div className="p-4 bg-neutral-900/40 border border-neutral-800/60 rounded-xl space-y-1.5 hover:border-neutral-800 transition-colors">
-                    <span className="text-xs text-emerald-400 font-semibold uppercase tracking-wider">
+                    <span className="text-sm text-emerald-400 font-semibold uppercase tracking-wider">
                       05. Loading Terms
                     </span>
-                    <p className="text-[11px] text-neutral-400 leading-snug">
+                    <p className="text-sm text-neutral-300 leading-snug">
                       Terms like &quot;loading&quot;, &quot;spinner&quot; or
                       &quot;loading-screen&quot; in the raw source.
                     </p>
@@ -971,28 +975,28 @@ export default function Docs() {
                       size={14}
                       className="text-emerald-400 animate-pulse"
                     />
-                    <span className="text-xs font-semibold text-neutral-200">
+                    <span className="text-sm font-semibold text-neutral-200">
                       Interactive CSR Detection Simulator
                     </span>
                   </div>
-                  <span className="text-[10px] text-neutral-500 font-mono">
+                  <span className="text-sm text-neutral-400 font-mono">
                     Simulate Crawl Checks
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                   <div className="lg:col-span-5 flex flex-col gap-2">
-                    <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold px-1 mb-1">
+                    <div className="text-sm text-neutral-400 uppercase tracking-widest font-semibold px-1 mb-1">
                       Select Preset HTML Template
                     </div>
                     {CSR_TEMPLATES.map((template, idx) => (
                       <button
                         key={template.name}
                         onClick={() => setSelectedTemplateIdx(idx)}
-                        className={`text-left p-3 rounded-lg border text-xs transition-all ${
+                        className={`text-left p-3 rounded-lg border text-sm transition-all ${
                           selectedTemplateIdx === idx
                             ? "bg-neutral-900 border-emerald-500/80 text-white font-medium shadow-inner shadow-black/40"
-                            : "bg-neutral-900/40 border-neutral-800/60 hover:bg-neutral-900 hover:text-white text-neutral-400"
+                            : "bg-neutral-900/40 border-neutral-800/60 hover:bg-neutral-900 hover:text-white text-neutral-300"
                         }`}
                       >
                         {template.name}
@@ -1000,38 +1004,38 @@ export default function Docs() {
                     ))}
                   </div>
 
-                  <div className="lg:col-span-7 bg-neutral-950/80 border border-neutral-800 rounded-lg p-4 font-mono text-[11px] leading-relaxed flex flex-col justify-between min-h-[220px]">
+                  <div className="lg:col-span-7 bg-neutral-950/80 border border-neutral-800 rounded-lg p-4 font-mono text-sm leading-relaxed flex flex-col justify-between min-h-[220px]">
                     <div className="space-y-2">
-                      <div className="text-neutral-500 border-b border-neutral-900 pb-1.5 flex justify-between font-sans text-[10px]">
+                      <div className="text-neutral-400 border-b border-neutral-900 pb-1.5 flex justify-between font-sans text-sm">
                         <span>SIMULATED SOURCE CODE</span>
                         <span className="text-neutral-600">HTML Source</span>
                       </div>
-                      <pre className="text-neutral-400 select-all overflow-x-auto max-h-[110px] pb-2 font-mono scrollbar-thin">
+                      <pre className="text-neutral-300 select-all overflow-x-auto max-h-[110px] pb-2 font-mono scrollbar-thin">
                         {selectedTemplate.html}
                       </pre>
                     </div>
 
                     <div className="mt-4 pt-3 border-t border-neutral-900 space-y-2 font-sans">
-                      <div className="flex justify-between items-center text-[10px] text-neutral-500 font-mono font-semibold">
+                      <div className="flex justify-between items-center text-sm text-neutral-400 font-mono font-semibold">
                         <span>CRITERIA EVALUATION</span>
                         <span>CHECK VALUE</span>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="grid grid-cols-2 gap-2 text-sm">
                         <div className="flex items-center gap-1.5">
                           <div
                             className={`w-1.5 h-1.5 rounded-full ${selectedTemplate.stats.length < 200 ? "bg-amber-400" : "bg-neutral-700"}`}
                           />
-                          <span className="text-neutral-400">
+                          <span className="text-neutral-300">
                             Short HTML ({selectedTemplate.stats.length} ch)
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 justify-end">
                           {selectedTemplate.stats.length < 200 ? (
-                            <span className="text-amber-400 font-medium text-[10px] bg-amber-500/10 px-1 rounded border border-amber-500/20">
+                            <span className="text-amber-400 font-medium text-sm bg-amber-500/10 px-1 rounded border border-amber-500/20">
                               FLAGGED
                             </span>
                           ) : (
-                            <span className="text-neutral-500 text-[10px]">
+                            <span className="text-neutral-400 text-sm">
                               PASS
                             </span>
                           )}
@@ -1041,18 +1045,18 @@ export default function Docs() {
                           <div
                             className={`w-1.5 h-1.5 rounded-full ${selectedTemplate.stats.childCount < 5 ? "bg-amber-400" : "bg-neutral-700"}`}
                           />
-                          <span className="text-neutral-400">
+                          <span className="text-neutral-300">
                             Empty Body ({selectedTemplate.stats.childCount}{" "}
                             nodes)
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 justify-end">
                           {selectedTemplate.stats.childCount < 5 ? (
-                            <span className="text-amber-400 font-medium text-[10px] bg-amber-500/10 px-1 rounded border border-amber-500/20">
+                            <span className="text-amber-400 font-medium text-sm bg-amber-500/10 px-1 rounded border border-amber-500/20">
                               FLAGGED
                             </span>
                           ) : (
-                            <span className="text-neutral-500 text-[10px]">
+                            <span className="text-neutral-400 text-sm">
                               PASS
                             </span>
                           )}
@@ -1062,17 +1066,17 @@ export default function Docs() {
                           <div
                             className={`w-1.5 h-1.5 rounded-full ${selectedTemplate.stats.hasRoot ? "bg-amber-400" : "bg-neutral-700"}`}
                           />
-                          <span className="text-neutral-400">
+                          <span className="text-neutral-300">
                             Framework Selector (#root/#__next)
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 justify-end">
                           {selectedTemplate.stats.hasRoot ? (
-                            <span className="text-amber-400 font-medium text-[10px] bg-amber-500/10 px-1 rounded border border-amber-500/20">
+                            <span className="text-amber-400 font-medium text-sm bg-amber-500/10 px-1 rounded border border-amber-500/20">
                               FLAGGED
                             </span>
                           ) : (
-                            <span className="text-neutral-500 text-[10px]">
+                            <span className="text-neutral-400 text-sm">
                               ABSENT
                             </span>
                           )}
@@ -1087,21 +1091,21 @@ export default function Docs() {
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-neutral-400 font-semibold tracking-wider uppercase font-mono">
+                          <span className="text-sm text-neutral-300 font-semibold tracking-wider uppercase font-mono">
                             DETERMINED CRAWL ENGINE
                           </span>
                           {selectedTemplate.stats.isCSR ? (
-                            <span className="text-xs text-amber-400 font-semibold flex items-center gap-1">
+                            <span className="text-sm text-amber-400 font-semibold flex items-center gap-1">
                               <Terminal size={12} className="animate-pulse" />{" "}
                               PUPPETEER FALLBACK
                             </span>
                           ) : (
-                            <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
+                            <span className="text-sm text-emerald-400 font-semibold flex items-center gap-1">
                               <Code2 size={12} /> CHEERIO FAST PARSER
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-neutral-400 mt-1 leading-normal font-light">
+                        <p className="text-sm text-neutral-300 mt-1 leading-normal ">
                           <strong>Rationale:</strong> {selectedTemplate.reason}
                         </p>
                       </div>
@@ -1112,25 +1116,57 @@ export default function Docs() {
 
               <CodeBlock
                 language="javascript"
-                code={`function detectCSR(html, root, config) {
+                code={`function detectCSR(html, root) {
+  let score = 0;
+
+  // 1. Strong negatives - server-rendered with hydration data
+  if (
+    html.includes("__NEXT_DATA__") ||
+    html.includes("self.__next_f") ||
+    html.includes("window.__NUXT__") ||
+    html.includes("__remixContext") ||
+    html.includes("__remixManifest") ||
+    html.includes("astro-island") ||
+    html.includes("data-sveltekit-hydrate") ||
+    html.includes("__sveltekit_")
+  ) {
+    return false; // SSR/hydrated - HTTP is sufficient
+  }
+
+  // 2. Strong positive - dev-confirmed CSR
+  if (/<noscript>[^<]*(enable javascript|requires javascript)/i.test(html)) {
+    return true;
+  }
+
+  // 3. Visible text after script/style strip
   const body = root.querySelector("body");
-  const bodyChildCount = body ? body.childNodes.length : 0;
+  if (!body) return true;
 
-  // Check various CSR indicators
-  const isShortHtml = html.length < 200;
-  const hasEmptyBody = bodyChildCount < 5;
-  const hasRootDiv = ["#root", "#__next"].some(
-    (selector) => root.querySelector(selector) !== null
-  );
-  const hasManyScripts = scriptCount > 10;
-  const lowContentRatio = (html.length / scriptCount) < 1000;
+  const bodyClone = parse(body.outerHTML);
+  bodyClone.querySelectorAll("script, style, template, noscript").forEach((el) => el.remove());
+  const visibleTextLen = bodyClone.text.replace(/\\s+/g, " ").trim().length;
 
-  return (
-    isShortHtml ||
-    (hasRootDiv && hasEmptyBody) ||
-    (hasEmptyBody && hasManyScripts) ||
-    (lowContentRatio && hasRootDiv)
-  );
+  if (visibleTextLen < 200) score += 3;
+  else if (visibleTextLen < 800) score += 1;
+
+  // 4. Framework root selectors
+  const roots = ["#root", "#__next", "#app", "#__nuxt", "[ng-version]"];
+  const hasRoot = roots.some((s) => root.querySelector(s));
+  const rootIsEmpty = roots.some((s) => {
+    const el = root.querySelector(s);
+    return el && el.childNodes.length === 0;
+  });
+
+  if (hasRoot && rootIsEmpty) score += 4;
+  else if (hasRoot && visibleTextLen < 500) score += 2;
+
+  // 5. True splash screen (only loading/spinner classes inside body)
+  const splash = body.querySelector('[class*="loading" i], [class*="spinner" i]');
+  if (splash && bodyClone.childNodes.length <= 3) {
+    score += 2;
+  }
+
+  return score >= 3;
 }`}
               />
             </section>
@@ -1158,7 +1194,7 @@ export default function Docs() {
                       Concurrency Management
                     </h3>
                   </div>
-                  <p className="text-xs text-neutral-400 leading-relaxed font-light">
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
                     Processes up to 5 URLs simultaneously to maximize crawling
                     performance and throughput, while preserving target server
                     bandwidth.
@@ -1172,7 +1208,7 @@ export default function Docs() {
                       Depth Tracking Heuristics
                     </h3>
                   </div>
-                  <p className="text-xs text-neutral-400 leading-relaxed font-light">
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
                     Tracks depth layers from the entry homepage. This maps
                     internal linkage hierarchies to configure appropriate index
                     weights and priorities.
@@ -1186,7 +1222,7 @@ export default function Docs() {
                       URL Deduplication
                     </h3>
                   </div>
-                  <p className="text-xs text-neutral-400 leading-relaxed font-light">
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
                     Keeps track of visited targets inside a unique `Set`. Query
                     string parameters and hash fragments are stripped to avoid
                     crawling redundant loops.
@@ -1200,7 +1236,7 @@ export default function Docs() {
                       Domain Scope Restriction
                     </h3>
                   </div>
-                  <p className="text-xs text-neutral-400 leading-relaxed font-light">
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
                     Prevents crawler leaking onto external websites. Restricts
                     queue pushes strictly to matching hostnames, in compliance
                     with robots.txt rules.
@@ -1227,17 +1263,17 @@ export default function Docs() {
 
               <div className="bg-neutral-900/30 border border-neutral-800 rounded-xl p-5 md:p-6 space-y-5">
                 <div className="flex justify-between items-center border-b border-neutral-800/80 pb-3">
-                  <span className="text-xs font-semibold text-neutral-200">
+                  <span className="text-sm font-semibold text-neutral-200">
                     Interactive Priority Calculator
                   </span>
-                  <code className="text-xs font-mono text-emerald-400">
+                  <code className="text-sm font-mono text-emerald-400">
                     Math.max(0.1, 1.0 - depth * 0.1)
                   </code>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
                   <div className="md:col-span-6 space-y-4">
-                    <div className="flex justify-between text-xs text-neutral-400">
+                    <div className="flex justify-between text-sm text-neutral-300">
                       <span>Crawl Level Depth</span>
                       <span>
                         Depth:{" "}
@@ -1258,7 +1294,7 @@ export default function Docs() {
                       />
                     </div>
 
-                    <div className="flex justify-between text-[10px] text-neutral-500 font-mono">
+                    <div className="flex justify-between text-sm text-neutral-400 font-mono">
                       <span>0 (Homepage)</span>
                       <span>5 (Deep content)</span>
                       <span>10+ (Archived)</span>
@@ -1271,17 +1307,17 @@ export default function Docs() {
                         <span className="text-2xl font-mono font-bold text-white tracking-tight leading-none">
                           {depthInfo.priority}
                         </span>
-                        <div className="text-[8px] uppercase tracking-wider text-neutral-500 mt-1 font-semibold">
+                        <div className="text-[8px] uppercase tracking-wider text-neutral-400 mt-1 font-semibold">
                           Priority
                         </div>
                       </div>
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <span className="text-[10px] uppercase font-mono font-bold text-emerald-400 tracking-wider">
+                      <span className="text-sm uppercase font-mono font-bold text-emerald-400 tracking-wider">
                         {depthInfo.label}
                       </span>
-                      <p className="text-xs text-neutral-400 mt-1.5 leading-relaxed font-light">
+                      <p className="text-sm text-neutral-300 mt-1.5 leading-relaxed ">
                         {depthInfo.desc}
                       </p>
                     </div>
@@ -1313,11 +1349,11 @@ export default function Docs() {
                       Sitemap Auto-Discovery
                     </h3>
                   </div>
-                  <p className="text-xs text-neutral-400 leading-relaxed font-light">
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
                     Reads robots.txt declarations to fetch pre-existing sitemap
                     URLs, prioritizing them during crawl setup.
                   </p>
-                  <div className="bg-neutral-950 border border-neutral-800 p-2.5 rounded font-mono text-[11px] text-neutral-300">
+                  <div className="bg-neutral-950 border border-neutral-800 p-2.5 rounded font-mono text-sm text-neutral-300">
                     Sitemap: https://example.com/sitemap.xml
                   </div>
                 </div>
@@ -1329,11 +1365,11 @@ export default function Docs() {
                       Disallow Enforcement
                     </h3>
                   </div>
-                  <p className="text-xs text-neutral-400 leading-relaxed font-light">
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
                     Validates each URL pattern against disallowed paths prior to
                     executing worker queues.
                   </p>
-                  <div className="bg-neutral-950 border border-neutral-800 p-2.5 rounded font-mono text-[11px] text-neutral-300 leading-normal">
+                  <div className="bg-neutral-950 border border-neutral-800 p-2.5 rounded font-mono text-sm text-neutral-300 leading-normal">
                     Disallow: /admin/
                     <br />
                     Disallow: /private/
@@ -1387,14 +1423,14 @@ export default function Docs() {
                   },
                 ].map((item) => (
                   <div key={item.step} className="flex gap-4">
-                    <div className="shrink-0 w-6 h-6 rounded-full bg-neutral-800 border border-neutral-700/80 flex items-center justify-center text-xs font-semibold text-emerald-400">
+                    <div className="shrink-0 w-6 h-6 rounded-full bg-neutral-800 border border-neutral-700/80 flex items-center justify-center text-sm font-semibold text-emerald-400">
                       {item.step}
                     </div>
                     <div className="space-y-1">
-                      <h4 className="text-xs font-semibold text-neutral-200">
+                      <h4 className="text-sm font-semibold text-neutral-200">
                         {item.title}
                       </h4>
-                      <p className="text-xs text-neutral-400 leading-relaxed font-light">
+                      <p className="text-sm text-neutral-300 leading-relaxed ">
                         {item.desc}
                       </p>
                     </div>
@@ -1430,16 +1466,26 @@ export default function Docs() {
               <CodeBlock
                 language="xml"
                 code={`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://example.com/</loc>
-    <lastmod>2026-04-18T12:00:00+00:00</lastmod>
+    <lastmod>2026-05-31T18:42:14.000Z</lastmod>
     <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="es" href="https://example.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://example.com/"/>
+    <image:image>
+      <image:loc>https://example.com/images/hero-banner.webp</image:loc>
+    </image:image>
   </url>
   <url>
     <loc>https://example.com/about</loc>
-    <lastmod>2026-04-15T08:30:00+00:00</lastmod>
+    <lastmod>2026-05-31T18:04:35.000Z</lastmod>
     <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://example.com/images/about-team.png</image:loc>
+    </image:image>
   </url>
   <!-- Additional URLs... -->
 </urlset>`}
@@ -1460,11 +1506,11 @@ export default function Docs() {
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
                   <h3 className="text-sm font-semibold text-neutral-100 flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-450" />
-                    Concurrent Requests
+                    Concurrent Request Worker Pool
                   </h3>
-                  <p className="text-xs text-neutral-400 leading-relaxed font-light">
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
                     Sets a thread cap limit (5 by default) to balance scrape
-                    speed with site request rate limiting parameters.
+                    speed, executing index actions asynchronously without head-of-line blocking.
                   </p>
                 </div>
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
@@ -1472,7 +1518,7 @@ export default function Docs() {
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-450" />
                     Shared Browser Context
                   </h3>
-                  <p className="text-xs text-neutral-400 leading-relaxed font-light">
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
                     Keeps the Chrome window active globally, spinning child tabs
                     dynamically to avoid page container spin-up latencies.
                   </p>
@@ -1480,12 +1526,28 @@ export default function Docs() {
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
                   <h3 className="text-sm font-semibold text-neutral-100 flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-450" />
-                    Lightweight Parser First
+                    Incremental Request Cache
                   </h3>
-                  <p className="text-xs text-neutral-400 leading-relaxed font-light">
-                    Evaluates index source lengths dynamically to prioritize
-                    cheerio parsed scripts, resorting to Chromium only when JS
-                    execution is flagged.
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
+                    Stores ETags and Last-Modified times to send If-None-Match/If-Modified-Since headers, skipping rendering and parsing for unchanged pages (304 Fast Path).
+                  </p>
+                </div>
+                <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
+                  <h3 className="text-sm font-semibold text-neutral-100 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-450" />
+                    Lightweight HTML-Parser First
+                  </h3>
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
+                    Evaluates page text density and hydration indicators dynamically, resorting to Chromium only when JS execution is flagged.
+                  </p>
+                </div>
+                <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
+                  <h3 className="text-sm font-semibold text-neutral-100 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-450" />
+                    Resource Request Interception
+                  </h3>
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
+                    Aborts fonts, CSS, media, and image loading inside Puppeteer, reducing JS rendering cost by 60-80% while retaining DOM traversal targets.
                   </p>
                 </div>
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
@@ -1493,7 +1555,7 @@ export default function Docs() {
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-450" />
                     Server-Sent Events Stream
                   </h3>
-                  <p className="text-xs text-neutral-400 leading-relaxed font-light">
+                  <p className="text-sm text-neutral-300 leading-relaxed ">
                     Streams live indexing statistics back to client wrappers in
                     real-time, removing REST polling routines.
                   </p>
@@ -1520,7 +1582,7 @@ export default function Docs() {
               <div className="bg-neutral-900/30 border border-neutral-800 rounded-xl p-5 md:p-6 space-y-6 mb-6">
                 <div className="flex items-center gap-2 border-b border-neutral-800 pb-3">
                   <Settings size={14} className="text-emerald-400" />
-                  <span className="text-xs font-semibold text-neutral-200">
+                  <span className="text-sm font-semibold text-neutral-200">
                     Interactive Config Customizer
                   </span>
                 </div>
@@ -1528,8 +1590,8 @@ export default function Docs() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-4">
                     <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-neutral-400">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-neutral-300">
                           Max Concurrency Limits
                         </span>
                         <span className="text-emerald-400 font-mono font-medium">
@@ -1546,14 +1608,14 @@ export default function Docs() {
                         }
                         className="w-full h-1 bg-neutral-800 rounded-md appearance-none accent-emerald-500 outline-none"
                       />
-                      <p className="text-[10px] text-neutral-500">
+                      <p className="text-sm text-neutral-400">
                         Limits concurrent page download operations.
                       </p>
                     </div>
 
                     <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-neutral-400">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-neutral-300">
                           Crawl Page Thresholds
                         </span>
                         <span className="text-emerald-400 font-mono font-medium">
@@ -1571,15 +1633,15 @@ export default function Docs() {
                         }
                         className="w-full h-1 bg-neutral-800 rounded-md appearance-none accent-emerald-500 outline-none"
                       />
-                      <p className="text-[10px] text-neutral-500">
+                      <p className="text-sm text-neutral-400">
                         Stops crawls when the count of discovered URLs hits this
                         cap limit.
                       </p>
                     </div>
 
                     <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-neutral-400">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-neutral-300">
                           CSR Min Content Size Check
                         </span>
                         <span className="text-emerald-400 font-mono font-medium">
@@ -1597,20 +1659,20 @@ export default function Docs() {
                         }
                         className="w-full h-1 bg-neutral-800 rounded-md appearance-none accent-emerald-500 outline-none"
                       />
-                      <p className="text-[10px] text-neutral-500">
+                      <p className="text-sm text-neutral-400">
                         Heuristic scanner flags HTML below this length for
                         Chromium validation.
                       </p>
                     </div>
 
                     <div className="space-y-2">
-                      <label className="block text-xs text-neutral-400 font-medium">
+                      <label className="block text-sm text-neutral-300 font-medium">
                         Puppeteer Event Wait State
                       </label>
                       <select
                         value={configWaitUntil}
                         onChange={(e) => setConfigWaitUntil(e.target.value)}
-                        className="w-full bg-neutral-900 border border-neutral-800 text-xs text-neutral-200 rounded p-2 focus:outline-none focus:border-emerald-500"
+                        className="w-full bg-neutral-900 border border-neutral-800 text-sm text-neutral-200 rounded p-2 focus:outline-none focus:border-emerald-500"
                       >
                         <option value="networkidle2">
                           networkidle2 (Recommended)
@@ -1623,7 +1685,7 @@ export default function Docs() {
                           domcontentloaded event
                         </option>
                       </select>
-                      <p className="text-[10px] text-neutral-500">
+                      <p className="text-sm text-neutral-400">
                         Configures when the browser marks pages ready to extract
                         links.
                       </p>
@@ -1644,7 +1706,7 @@ export default function Docs() {
       </div>
 
       <footer className="border-t border-neutral-900 bg-neutral-950 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-neutral-500 font-light">
+        <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-neutral-400 ">
           <p>Built with Next.js • Open Source Sitemap Generator</p>
           <div className="flex gap-4">
             <Link href="/" className="hover:text-neutral-300 transition-colors">
@@ -1652,7 +1714,7 @@ export default function Docs() {
             </Link>
             <Link
               href="/docs"
-              className="hover:text-neutral-300 transition-colors font-medium text-neutral-400"
+              className="hover:text-neutral-300 transition-colors font-medium text-neutral-300"
             >
               Documentation
             </Link>
