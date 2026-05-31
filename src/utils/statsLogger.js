@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 
-const LOGS_DIR = path.join(process.cwd(), "public", "logs");
+const LOGS_DIR = path.join(process.cwd(), ".logs");
 
 if (!fs.existsSync(LOGS_DIR)) {
   fs.mkdirSync(LOGS_DIR, { recursive: true });
@@ -24,14 +24,14 @@ export class SitemapStats {
       depthDistribution: {},
     };
     this.robotsTxtRules = {
-      disallowedPaths: [],
+      rules: [],
       hadRobotsTxt: false,
     };
   }
 
-  setRobotsTxtInfo(disallowedPaths) {
-    this.robotsTxtRules.disallowedPaths = disallowedPaths;
-    this.robotsTxtRules.hadRobotsTxt = disallowedPaths.length > 0;
+  setRobotsTxtInfo(rules) {
+    this.robotsTxtRules.rules = rules;
+    this.robotsTxtRules.hadRobotsTxt = rules.length > 0;
   }
 
   setSitemapPages(count) {
@@ -99,7 +99,7 @@ export class SitemapStats {
       robotsTxt: this.robotsTxtRules,
       errors: {
         count: this.errors.length,
-        details: this.errors.slice(0, 20),
+        details: this.errors.slice(0, 1000),
       },
     };
   }
@@ -131,7 +131,7 @@ export class SitemapStats {
 ║                                                                ║
 ║ ROBOTS.TXT:                                                    ║
 ║   • Found: ${(this.robotsTxtRules.hadRobotsTxt ? "Yes" : "No").padEnd(53)} ║
-║   • Disallowed Paths: ${String(this.robotsTxtRules.disallowedPaths.length).padEnd(40)} ║
+║   • Rules: ${String(this.robotsTxtRules.rules.length).padEnd(53)} ║
 ║                                                                ║
 ║ ERRORS: ${String(this.errors.length).padEnd(56)} ║
 ╚════════════════════════════════════════════════════════════════╝

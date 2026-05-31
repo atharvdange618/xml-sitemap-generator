@@ -42,3 +42,7 @@ next-env.d.ts
 
 # logs
 /public/logs
+
+.logs
+crawl.md
+review.md

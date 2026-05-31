@@ -1,4 +1,5 @@
 import { createSitemap } from "@/utils/sitemapGenerator";
+import zlib from "zlib";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,8 @@ export async function GET(request) {
             parseInt(maxPages, 10) || 100,
             onProgress,
           );
-          const doneData = { type: "done", sitemap, stats };
+          const gzipSitemap = zlib.gzipSync(Buffer.from(sitemap)).toString("base64");
+          const doneData = { type: "done", sitemap, gzipSitemap, stats };
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(doneData)}\n\n`),
           );
