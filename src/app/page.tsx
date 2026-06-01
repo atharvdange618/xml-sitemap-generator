@@ -1,7 +1,7 @@
 /* eslint-disable react/no-unescaped-entities */
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -27,6 +27,7 @@ import {
   Cpu,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { StatsJson } from "@/types/sitemap";
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -36,21 +37,39 @@ export default function Home() {
   const [gzipSitemap, setGzipSitemap] = useState("");
   const [error, setError] = useState("");
   const [progress, setProgress] = useState({ url: "", count: 0 });
-  const [crawlLogs, setCrawlLogs] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [selectedHistoryStats, setSelectedHistoryStats] = useState(null);
+  const [crawlLogs, setCrawlLogs] = useState<string[]>([]);
+  const [stats, setStats] = useState<StatsJson | null>(null);
+  const [history, setHistory] = useState<StatsJson[]>([]);
+  const [selectedHistoryStats, setSelectedHistoryStats] =
+    useState<StatsJson | null>(null);
   const [expandedErrors, setExpandedErrors] = useState(false);
   const [expandedRobots, setExpandedRobots] = useState(false);
   const [expandedDepth, setExpandedDepth] = useState(false);
 
-  const eventSourceRef = useRef(null);
-  const terminalEndRef = useRef(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const terminalEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (terminalEndRef.current) {
       terminalEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [crawlLogs]);
+
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch("/api/logs?limit=5");
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch crawl history:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
 
   const handleDownloadGzip = () => {
     if (!gzipSitemap) return;
@@ -70,7 +89,7 @@ export default function Home() {
     URL.revokeObjectURL(blobUrl);
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
@@ -168,7 +187,10 @@ export default function Home() {
     };
   }, []);
 
-  const renderStatsDashboard = (report, isHistory = false) => {
+  const renderStatsDashboard = (
+    report: StatsJson | null,
+    isHistory = false,
+  ) => {
     if (!report) return null;
 
     const finalTotal = report.statistics?.finalSitemapTotal ?? 0;
@@ -192,7 +214,7 @@ export default function Home() {
       .sort((a, b) => a.depth - b.depth);
     const maxDepthCount = Math.max(...depthData.map((d) => d.count), 1);
 
-    const disallowedPaths = report.robotsTxt?.disallowedPaths || [];
+    const disallowedPaths = report.robotsTxt?.rules || [];
     const hadRobotsTxt = report.robotsTxt?.hadRobotsTxt ?? false;
     const errorsCount = report.errors?.count ?? 0;
     const errorDetails = report.errors?.details || [];
@@ -581,12 +603,13 @@ export default function Home() {
 
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-8 py-12 space-y-12">
         <div className="text-center space-y-4 max-w-2xl mx-auto">
-          <h1 className="text-4xl md:text-5xl  text-white tracking-tight leading-tight">
+          <h1 className="text-4xl md:text-5xl text-white tracking-tight leading-tight">
             Generate XML Sitemaps
           </h1>
-          <p className="text-sm md:text-base text-white leading-relaxed ">
-            An intelligent site crawler that respects robots.txt, parses image tags,
-            optimizes fetches with conditional HTTP caching, and writes compressed sitemaps.
+          <p className="text-sm md:text-base text-white leading-relaxed">
+            An intelligent site crawler that respects robots.txt, parses image
+            tags, optimizes fetches with conditional HTTP caching, and writes
+            compressed sitemaps.
           </p>
         </div>
 
@@ -757,8 +780,10 @@ export default function Home() {
                         <h4 className="text-sm font-semibold text-neutral-300">
                           Incremental Caching & Gzip
                         </h4>
-                        <p className="text-sm text-neutral-400 mt-0.5  leading-snug">
-                          Utilizes ETags and Last-Modified times to perform conditional fetches (304 Fast Path), and delivers XML and GZ files.
+                        <p className="text-sm text-neutral-400 mt-0.5 leading-snug">
+                          Utilizes ETags and Last-Modified times to perform
+                          conditional fetches (304 Fast Path), and delivers XML
+                          and GZ files.
                         </p>
                       </div>
                     </div>
@@ -771,8 +796,9 @@ export default function Home() {
                         <h4 className="text-sm font-semibold text-neutral-300">
                           Image & shadow DOM parsing
                         </h4>
-                        <p className="text-sm text-neutral-400 mt-0.5  leading-snug">
-                          Traverses shadow roots and extracts image elements to build rich Google Image schema sitemaps.
+                        <p className="text-sm text-neutral-400 mt-0.5 leading-snug">
+                          Traverses shadow roots and extracts image elements to
+                          build rich Google Image schema sitemaps.
                         </p>
                       </div>
                     </div>
@@ -785,8 +811,10 @@ export default function Home() {
                         <h4 className="text-sm font-semibold text-neutral-300">
                           Robots.txt & Redirections
                         </h4>
-                        <p className="text-sm text-neutral-400 mt-0.5  leading-snug">
-                          Ethically handles redirects, consolidates protocols, and parses wildcards and Allow rules using RFC 9309 criteria.
+                        <p className="text-sm text-neutral-400 mt-0.5 leading-snug">
+                          Ethically handles redirects, consolidates protocols,
+                          and parses wildcards and Allow rules using RFC 9309
+                          criteria.
                         </p>
                       </div>
                     </div>
@@ -815,6 +843,62 @@ export default function Home() {
           </div>
         )}
 
+        {history.length > 0 &&
+          !loading &&
+          process.env.NODE_ENV === "development" && (
+            <div className="max-w-3xl mx-auto bg-neutral-900/20 border border-neutral-850 rounded-xl p-6 shadow-xl space-y-4">
+              <h3 className="text-base font-semibold text-neutral-200 flex items-center gap-2">
+                <History size={16} className="text-emerald-400" />
+                Recent Sitemap Crawls
+              </h3>
+              <div className="divide-y divide-neutral-800/60">
+                {history.map((log, idx) => (
+                  <div
+                    key={idx}
+                    className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm"
+                  >
+                    <div className="space-y-1 truncate max-w-[280px] sm:max-w-md">
+                      <div
+                        className="font-mono text-white truncate font-medium"
+                        title={log.websiteUrl}
+                      >
+                        {log.websiteUrl}
+                      </div>
+                      <div className="text-neutral-500 text-xs">
+                        {new Date(log.timestamp).toLocaleString()} • Duration:{" "}
+                        {log.duration}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 border border-emerald-500/10 rounded-sm text-xs">
+                        {log.statistics?.finalSitemapTotal ?? 0} URLs
+                      </span>
+                      <button
+                        onClick={() => {
+                          setSelectedHistoryStats(log);
+                          setTimeout(() => {
+                            const el = document.getElementById(
+                              "stats-report-container",
+                            );
+                            if (el) {
+                              el.scrollIntoView({
+                                behavior: "smooth",
+                                block: "start",
+                              });
+                            }
+                          }, 100);
+                        }}
+                        className="px-3 py-1 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 hover:text-white rounded border border-neutral-750 text-xs font-semibold cursor-pointer transition-all"
+                      >
+                        View Report
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         <div
           id="stats-report-container"
           className="max-w-3xl mx-auto scroll-mt-24"
@@ -832,7 +916,7 @@ export default function Home() {
               <Cpu size={16} className="text-emerald-400" />
               <span>Smart SPA Detection</span>
             </div>
-            <p className="text-sm text-neutral-400 leading-relaxed ">
+            <p className="text-sm text-neutral-400 leading-relaxed">
               Automatically evaluates index source parameters to detect CSR
               apps. Restricts heavy Puppeteer launch threads solely to
               Javascript-rendered frameworks.
@@ -844,7 +928,7 @@ export default function Home() {
               <ShieldAlert size={16} className="text-emerald-400" />
               <span>Robots.txt Directive Compliance</span>
             </div>
-            <p className="text-sm text-neutral-400 leading-relaxed ">
+            <p className="text-sm text-neutral-400 leading-relaxed">
               Maintains strict crawl safety rules. Auto-discovers indexing
               sitemaps and bypasses disallow routes to crawl websites
               respectfully.
@@ -856,7 +940,7 @@ export default function Home() {
               <Activity size={16} className="text-emerald-400" />
               <span>SSE Progress Streams</span>
             </div>
-            <p className="text-sm text-neutral-400 leading-relaxed ">
+            <p className="text-sm text-neutral-400 leading-relaxed">
               Streams download details, crawling counters, and status updates
               back to user client layouts in real-time, removing REST polling
               loops.
@@ -866,7 +950,7 @@ export default function Home() {
       </section>
 
       <footer className="border-t border-neutral-900 bg-neutral-950 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-neutral-400 ">
+        <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-neutral-400">
           <p>Built with Next.js • Open Source Sitemap Generator</p>
           <div className="flex gap-4">
             <Link

@@ -1,14 +1,25 @@
-import { http, fetchUrlWithPuppeteer } from "./httpClient.js";
+import { http, fetchUrlWithPuppeteer } from "./httpClient";
+import { Browser } from "puppeteer";
 
-export function parseRobotsTxt(content, userAgent = "XmlSitemapGenerator") {
-  const rules = {
+export interface CompiledRule {
+  pattern: string;
+  regex: RegExp;
+}
+
+export interface RobotsRulesCompiled {
+  disallowed: CompiledRule[];
+  allowed: CompiledRule[];
+}
+
+export function parseRobotsTxt(content: string, userAgent = "XmlSitemapGenerator"): RobotsRulesCompiled {
+  const rules: RobotsRulesCompiled = {
     disallowed: [],
     allowed: [],
   };
-  let currentAgents = [];
+  const currentAgents: string[] = [];
   const lines = content.split(/\r?\n/);
 
-  function compilePattern(pattern) {
+  function compilePattern(pattern: string): RegExp {
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
     const regexStr = "^" + escaped.replace(/\*/g, ".*");
     return new RegExp(regexStr);
@@ -47,9 +58,9 @@ export function parseRobotsTxt(content, userAgent = "XmlSitemapGenerator") {
   return rules;
 }
 
-export function isPathAllowed(path, rules) {
-  let matchingDisallow = null;
-  let matchingAllow = null;
+export function isPathAllowed(path: string, rules: RobotsRulesCompiled): boolean {
+  let matchingDisallow: CompiledRule | null = null;
+  let matchingAllow: CompiledRule | null = null;
 
   for (const rule of rules.disallowed) {
     if (rule.regex.test(path)) {
@@ -85,13 +96,16 @@ export function isPathAllowed(path, rules) {
   return true;
 }
 
-export async function fetchRobotsTxtRules(baseUrl, getBrowser) {
+export async function fetchRobotsTxtRules(
+  baseUrl: string,
+  getBrowser?: () => Promise<Browser>
+): Promise<RobotsRulesCompiled> {
   const robotsUrl = `${baseUrl}/robots.txt`;
   let robotsContent = "";
   try {
     const response = await http.get(robotsUrl);
     robotsContent = response.data;
-  } catch (error) {
+  } catch (error: any) {
     if (getBrowser) {
       console.warn(
         `HTTP failed to fetch robots.txt (${error.message}). Attempting Puppeteer fallback.`,

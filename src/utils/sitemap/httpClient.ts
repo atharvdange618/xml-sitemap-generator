@@ -1,4 +1,5 @@
-import axios from "axios";
+import axios, { AxiosResponse } from "axios";
+import { Browser } from "puppeteer";
 
 // Configured HTTP Client with headers and redirects limit
 export const http = axios.create({
@@ -13,7 +14,11 @@ export const http = axios.create({
   validateStatus: (status) => status < 500, // Surface 4xx without throwing; retry on 5xx
 });
 
-export async function fetchWithRetry(url, headers = {}, attempts = 3) {
+export async function fetchWithRetry(
+  url: string,
+  headers: Record<string, string> = {},
+  attempts = 3,
+): Promise<AxiosResponse> {
   for (let i = 0; i < attempts; i++) {
     try {
       const response = await http.get(url, { headers });
@@ -28,9 +33,13 @@ export async function fetchWithRetry(url, headers = {}, attempts = 3) {
       await new Promise((resolve) => setTimeout(resolve, wait));
     }
   }
+  throw new Error("Failed to fetch after all retries");
 }
 
-export async function fetchUrlWithPuppeteer(url, getBrowser) {
+export async function fetchUrlWithPuppeteer(
+  url: string,
+  getBrowser: () => Promise<Browser>,
+): Promise<string> {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
@@ -50,7 +59,10 @@ export async function fetchUrlWithPuppeteer(url, getBrowser) {
   }
 }
 
-export async function checkUrlWithPuppeteer(url, getBrowser) {
+export async function checkUrlWithPuppeteer(
+  url: string,
+  getBrowser: () => Promise<Browser>,
+): Promise<boolean> {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
@@ -58,7 +70,7 @@ export async function checkUrlWithPuppeteer(url, getBrowser) {
       waitUntil: "domcontentloaded",
       timeout: 15000,
     });
-    return res && res.status() === 200;
+    return !!(res && res.status() === 200);
   } finally {
     try {
       await page.close();

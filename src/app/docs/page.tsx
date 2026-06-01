@@ -261,7 +261,7 @@ const CSR_TEMPLATES = [
   },
 ];
 
-const CopyButton = ({ text }) => {
+const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(text);
@@ -288,7 +288,7 @@ const CopyButton = ({ text }) => {
   );
 };
 
-const CodeBlock = ({ code, language }) => {
+const CodeBlock = ({ code, language }: { code: string; language: string }) => {
   return (
     <div className="relative group bg-neutral-900/80 border border-neutral-800 rounded-lg overflow-hidden font-mono shadow-md backdrop-blur-sm">
       <div className="flex items-center justify-between px-4 py-2 bg-neutral-950/40 border-b border-neutral-800/80">
@@ -341,7 +341,7 @@ export default function Docs() {
   }
 }`;
 
-  const sectionRefs = useRef({});
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
     const observerOptions = {
@@ -350,7 +350,7 @@ export default function Docs() {
       threshold: 0.1,
     };
 
-    const observerCallback = (entries) => {
+    const observerCallback = (entries: IntersectionObserverEntry[]) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
           setActiveSection(entry.target.id);
@@ -383,7 +383,7 @@ export default function Docs() {
     );
   });
 
-  const scrollToSection = (id) => {
+  const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
     if (element) {
       const yOffset = -80;
@@ -395,7 +395,7 @@ export default function Docs() {
     }
   };
 
-  const renderStepperVisualizer = (step) => {
+  const renderStepperVisualizer = (step: any) => {
     switch (step.visualType) {
       case "discovery":
         return (
@@ -565,7 +565,7 @@ export default function Docs() {
     }
   };
 
-  const getDepthDescription = (depth) => {
+  const getDepthDescription = (depth: string | number) => {
     const d = Number(depth);
     if (d === 0) {
       return {
@@ -1289,7 +1289,7 @@ export default function Docs() {
                         min="0"
                         max="10"
                         value={depthInput}
-                        onChange={(e) => setDepthInput(e.target.value)}
+                        onChange={(e) => setDepthInput(Number(e.target.value))}
                         className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 outline-none"
                       />
                     </div>
@@ -1510,7 +1510,8 @@ export default function Docs() {
                   </h3>
                   <p className="text-sm text-neutral-300 leading-relaxed ">
                     Sets a thread cap limit (5 by default) to balance scrape
-                    speed, executing index actions asynchronously without head-of-line blocking.
+                    speed, executing index actions asynchronously without
+                    head-of-line blocking.
                   </p>
                 </div>
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
@@ -1529,7 +1530,9 @@ export default function Docs() {
                     Incremental Request Cache
                   </h3>
                   <p className="text-sm text-neutral-300 leading-relaxed ">
-                    Stores ETags and Last-Modified times to send If-None-Match/If-Modified-Since headers, skipping rendering and parsing for unchanged pages (304 Fast Path).
+                    Stores ETags and Last-Modified times to send
+                    If-None-Match/If-Modified-Since headers, skipping rendering
+                    and parsing for unchanged pages (304 Fast Path).
                   </p>
                 </div>
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
@@ -1538,7 +1541,9 @@ export default function Docs() {
                     Lightweight HTML-Parser First
                   </h3>
                   <p className="text-sm text-neutral-300 leading-relaxed ">
-                    Evaluates page text density and hydration indicators dynamically, resorting to Chromium only when JS execution is flagged.
+                    Evaluates page text density and hydration indicators
+                    dynamically, resorting to Chromium only when JS execution is
+                    flagged.
                   </p>
                 </div>
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
@@ -1547,7 +1552,9 @@ export default function Docs() {
                     Resource Request Interception
                   </h3>
                   <p className="text-sm text-neutral-300 leading-relaxed ">
-                    Aborts fonts, CSS, media, and image loading inside Puppeteer, reducing JS rendering cost by 60-80% while retaining DOM traversal targets.
+                    Aborts fonts, CSS, media, and image loading inside
+                    Puppeteer, reducing JS rendering cost by 60-80% while
+                    retaining DOM traversal targets.
                   </p>
                 </div>
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">

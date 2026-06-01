@@ -1,25 +1,26 @@
-import puppeteer from "puppeteer";
-import { parse } from "node-html-parser";
-import { SitemapStats } from "../statsLogger.js";
-import { config } from "./config.js";
-import { renderCache, crawlCache, initCrawlCache, saveCache } from "./cache.js";
-import { isValidImageUrl, normalizeUrl, isValidUrl } from "./urlUtils.js";
-import { fetchWithRetry } from "./httpClient.js";
-import { fetchRobotsTxtRules, isPathAllowed } from "./robots.js";
+import puppeteer, { Browser, Page } from "puppeteer";
+import { parse, HTMLElement } from "node-html-parser";
+import { SitemapStats } from "../statsLogger";
+import { config, CrawlerConfig } from "./config";
+import { renderCache, crawlCache, initCrawlCache, saveCache } from "./cache";
+import { isValidImageUrl, normalizeUrl, isValidUrl } from "./urlUtils";
+import { fetchWithRetry } from "./httpClient";
+import { fetchRobotsTxtRules, isPathAllowed, RobotsRulesCompiled } from "./robots";
 import {
   fetchAndParseSitemap,
   discoverSitemap,
   generateSitemap,
-} from "./parser.js";
+} from "./parser";
+import { SitemapItem } from "../../types/sitemap";
 
 const CONCURRENCY = 5;
 
-export function calculatePriority(depth) {
+export function calculatePriority(depth: number): string {
   const priority = 1.0 - depth * 0.1;
   return Math.max(0.1, priority).toFixed(1);
 }
 
-export function isIndexable(headers, root) {
+export function isIndexable(headers: Record<string, string> | undefined, root: HTMLElement): boolean {
   // 1. Check X-Robots-Tag header
   const xRobots = headers?.["x-robots-tag"];
   if (xRobots && /noindex/i.test(String(xRobots))) {
@@ -38,7 +39,7 @@ export function isIndexable(headers, root) {
   return true;
 }
 
-export function detectCSR(html, root) {
+export function detectCSR(html: string, root: HTMLElement): boolean {
   let score = 0;
 
   // 1. Strong negatives - server-rendered with hydration data
@@ -100,7 +101,7 @@ export function detectCSR(html, root) {
   return score >= 3;
 }
 
-export function shouldRender(currentUrl, html, root) {
+export function shouldRender(currentUrl: string, html: string, root: HTMLElement): boolean {
   try {
     const origin = new URL(currentUrl).origin;
     const cached = renderCache.get(origin);
@@ -111,7 +112,7 @@ export function shouldRender(currentUrl, html, root) {
     const samples = renderCache.get(`${origin}:samples`) || [];
     samples.push(isCSR);
 
-    if (samples.length >= 3 && samples.every((s) => s === samples[0])) {
+    if (samples.length >= 3 && samples.every((s: any) => s === samples[0])) {
       renderCache.set(origin, samples[0] ? "browser" : "http");
     } else {
       renderCache.set(`${origin}:samples`, samples);
@@ -123,19 +124,19 @@ export function shouldRender(currentUrl, html, root) {
 }
 
 export async function crawlSite(
-  baseUrl,
+  baseUrl: string,
   maxPages = 100,
-  cfg = config,
-  onProgress,
-  robotsRules = { disallowed: [], allowed: [] },
-  stats = null,
-  getBrowserArg = null,
-) {
-  const sitemapData = new Map();
+  cfg: CrawlerConfig = config,
+  onProgress?: (url: string, count: number) => void,
+  robotsRules: RobotsRulesCompiled = { disallowed: [], allowed: [] },
+  stats: SitemapStats | null = null,
+  getBrowserArg: (() => Promise<Browser>) | null = null,
+): Promise<Map<string, SitemapItem>> {
+  const sitemapData = new Map<string, SitemapItem>();
   const normalizedBase = normalizeUrl(baseUrl, baseUrl);
   const queue = [{ url: normalizedBase, depth: 0 }];
   const visited = new Set([normalizedBase]);
-  let puppeteerBrowser = null;
+  let puppeteerBrowser: Browser | null = null;
   let activeCount = 0;
 
   const getBrowser =
@@ -158,14 +159,14 @@ export async function crawlSite(
   const next = () => {
     while (queue.length > 0) {
       const item = queue.shift();
-      if (sitemapData.size + activeCount < maxPages) {
+      if (item && sitemapData.size + activeCount < maxPages) {
         return item;
       }
     }
     return null;
   };
 
-  const processOne = async ({ url, depth }) => {
+  const processOne = async ({ url, depth }: { url: string; depth: number }) => {
     if (onProgress) {
       onProgress(url, sitemapData.size + 1);
     }
@@ -236,7 +237,7 @@ export async function crawlSite(
         activeCount++;
         try {
           await processOne(item);
-        } catch (e) {
+        } catch (e: any) {
           console.error(`Error processing ${item.url}:`, e.message);
           if (stats) {
             stats.addError(item.url, e.message);
@@ -251,8 +252,8 @@ export async function crawlSite(
   } finally {
     if (puppeteerBrowser && !getBrowserArg) {
       try {
-        await puppeteerBrowser.close();
-      } catch (e) {
+        await (puppeteerBrowser as Browser).close();
+      } catch (e: any) {
         console.error("Error closing browser:", e.message);
       }
     }
@@ -261,8 +262,21 @@ export async function crawlSite(
   return sitemapData;
 }
 
-export async function crawlUrl(currentUrl, baseUrl, cfg, getBrowser) {
-  let httpData = null;
+export async function crawlUrl(
+  currentUrl: string,
+  baseUrl: string,
+  cfg: CrawlerConfig,
+  getBrowser: () => Promise<Browser>
+): Promise<{
+  links: string[];
+  lastmod: string | null;
+  alternates: { hreflang: string; href: string }[];
+  canonical: string | null;
+  isIndexable: boolean;
+  images: string[];
+  redirectTarget?: string;
+}> {
+  let httpData: any = null;
 
   const origin = new URL(currentUrl).origin;
   const cachedDecision = renderCache.get(origin);
@@ -449,9 +463,18 @@ export async function crawlUrl(currentUrl, baseUrl, cfg, getBrowser) {
   }
 }
 
-export async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
+export async function getLinksWithHTTP(baseUrl: string, currentUrl: string, cfg: CrawlerConfig): Promise<{
+  links: string[];
+  isCSR: boolean;
+  lastmod: string | null;
+  alternates: { hreflang: string; href: string }[];
+  canonical: string | null;
+  isIndexable: boolean;
+  images: string[];
+  redirectTarget?: string;
+}> {
   const cached = crawlCache[currentUrl];
-  const headers = {};
+  const headers: Record<string, string> = {};
   if (cached) {
     if (cached.lastmodHeader) {
       headers["If-Modified-Since"] = cached.lastmodHeader;
@@ -475,8 +498,8 @@ export async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
     };
   }
 
-  const finalUrl = response.request?.res?.responseUrl
-    ? normalizeUrl(response.request.res.responseUrl, baseUrl)
+  const finalUrl = (response.request as any)?.res?.responseUrl
+    ? normalizeUrl((response.request as any).res.responseUrl, baseUrl)
     : null;
   const normalizedCurrent = normalizeUrl(currentUrl, baseUrl);
 
@@ -488,6 +511,7 @@ export async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
       alternates: [],
       canonical: null,
       isIndexable: false,
+      images: [],
       redirectTarget: finalUrl,
     };
   }
@@ -512,7 +536,7 @@ export async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
     return result;
   }
 
-  const contentType = response.headers["content-type"] || "";
+  const contentType = (response.headers["content-type"] as string) || "";
   if (
     contentType.includes("application/json") ||
     !contentType.includes("text/html")
@@ -542,7 +566,7 @@ export async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
   const root = parse(html);
 
   // Check last-modified
-  const lastmodHeader = response.headers["last-modified"];
+  const lastmodHeader = response.headers["last-modified"] as string;
   let lastmod = null;
   if (lastmodHeader) {
     const parsedDate = new Date(lastmodHeader);
@@ -552,7 +576,7 @@ export async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
   }
 
   // Gating indexability
-  const pageIndexable = isIndexable(response.headers, root);
+  const pageIndexable = isIndexable(response.headers as any, root);
   if (!pageIndexable) {
     const result = {
       links: [],
@@ -621,7 +645,18 @@ export async function getLinksWithHTTP(baseUrl, currentUrl, cfg) {
   return result;
 }
 
-export async function getLinksWithPuppeteer(browser, baseUrl, currentUrl) {
+export async function getLinksWithPuppeteer(
+  browser: Browser,
+  baseUrl: string,
+  currentUrl: string
+): Promise<{
+  links: string[];
+  alternates: { hreflang: string; href: string }[];
+  canonical: string | null;
+  isIndexable: boolean;
+  images: string[];
+  redirectTarget?: string;
+}> {
   const page = await browser.newPage();
 
   try {
@@ -650,6 +685,7 @@ export async function getLinksWithPuppeteer(browser, baseUrl, currentUrl) {
         alternates: [],
         canonical: null,
         isIndexable: false,
+        images: [],
         redirectTarget: finalUrl,
       };
     }
@@ -658,7 +694,7 @@ export async function getLinksWithPuppeteer(browser, baseUrl, currentUrl) {
     const headers = response?.headers() || {};
     const xRobots = headers["x-robots-tag"];
     if (xRobots && /noindex/i.test(xRobots)) {
-      return { links: [], alternates: [], canonical: null, isIndexable: false };
+      return { links: [], alternates: [], canonical: null, isIndexable: false, images: [] };
     }
 
     // Wait Strategy (race between body content density or selector markers)
@@ -680,24 +716,24 @@ export async function getLinksWithPuppeteer(browser, baseUrl, currentUrl) {
     // Check meta noindex
     const metaNoIndex = await page.evaluate(() => {
       const meta = document.querySelector('meta[name="robots" i]');
-      return meta && /noindex/i.test(meta.getAttribute("content") || "");
+      return !!(meta && /noindex/i.test(meta.getAttribute("content") || ""));
     });
 
     if (metaNoIndex) {
-      return { links: [], alternates: [], canonical: null, isIndexable: false };
+      return { links: [], alternates: [], canonical: null, isIndexable: false, images: [] };
     }
 
-    const pageData = await page.evaluate((baseUrl) => {
-      const links = [];
-      const alternates = [];
-      let canonical = null;
+    const pageData = await page.evaluate((baseUrlStr) => {
+      const links: string[] = [];
+      const alternates: { hreflang: string; href: string }[] = [];
+      let canonical: string | null = null;
 
       // Piercing Shadow DOM to find all anchors
-      function findAllAnchors(root = document) {
-        const anchors = Array.from(root.querySelectorAll("a[href]"));
-        const shadowRoots = Array.from(root.querySelectorAll("*"))
+      function findAllAnchors(rootNode: Document | ShadowRoot = document): HTMLAnchorElement[] {
+        const anchors = Array.from(rootNode.querySelectorAll("a[href]")) as HTMLAnchorElement[];
+        const shadowRoots = Array.from(rootNode.querySelectorAll("*"))
           .map((el) => el.shadowRoot)
-          .filter(Boolean);
+          .filter(Boolean) as ShadowRoot[];
         for (const sr of shadowRoots) {
           anchors.push(...findAllAnchors(sr));
         }
@@ -711,7 +747,7 @@ export async function getLinksWithPuppeteer(browser, baseUrl, currentUrl) {
           const href = element.getAttribute("href");
           if (!href) continue;
           const url = new URL(href, window.location.href);
-          if (url.origin === baseUrl) {
+          if (url.origin === baseUrlStr) {
             url.hash = "";
             const blacklist = [
               "utm_source",
@@ -748,13 +784,13 @@ export async function getLinksWithPuppeteer(browser, baseUrl, currentUrl) {
       const linkTags = document.querySelectorAll(
         'link[rel="canonical"], link[rel="alternate"]',
       );
-      for (const link of linkTags) {
+      for (const linkTag of Array.from(linkTags)) {
         try {
-          const rel = link.getAttribute("rel")?.toLowerCase();
-          const href = link.getAttribute("href");
+          const rel = linkTag.getAttribute("rel")?.toLowerCase();
+          const href = linkTag.getAttribute("href");
           if (!href) continue;
           const url = new URL(href, window.location.href);
-          if (url.origin === baseUrl) {
+          if (url.origin === baseUrlStr) {
             url.hash = "";
             const blacklist = [
               "utm_source",
@@ -786,7 +822,7 @@ export async function getLinksWithPuppeteer(browser, baseUrl, currentUrl) {
             if (rel === "canonical") {
               canonical = url.href;
             } else if (rel === "alternate") {
-              const hreflang = link.getAttribute("hreflang");
+              const hreflang = linkTag.getAttribute("hreflang");
               if (hreflang) {
                 alternates.push({ hreflang, href: url.href });
               }
@@ -797,11 +833,11 @@ export async function getLinksWithPuppeteer(browser, baseUrl, currentUrl) {
       }
 
       // Extract images
-      const images = [];
+      const images: string[] = [];
       const imgElements = document.querySelectorAll("img[src]");
-      for (const element of imgElements) {
+      for (const imgEl of Array.from(imgElements)) {
         try {
-          const src = element.getAttribute("src");
+          const src = imgEl.getAttribute("src");
           if (!src) continue;
           const url = new URL(src, window.location.href);
           images.push(url.href);
@@ -809,10 +845,10 @@ export async function getLinksWithPuppeteer(browser, baseUrl, currentUrl) {
       }
 
       return {
-        links: [...new Set(links)],
+        links: Array.from(new Set(links)),
         alternates,
         canonical,
-        images: [...new Set(images)],
+        images: Array.from(new Set(images)),
       };
     }, baseUrl);
 
@@ -826,18 +862,27 @@ export async function getLinksWithPuppeteer(browser, baseUrl, currentUrl) {
   } finally {
     try {
       await page.close();
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error closing page:", e.message);
     }
   }
 }
 
-export function extractLinks(root, baseUrl, currentUrl) {
-  const links = [];
-  const alternates = [];
-  let canonical = null;
+export function extractLinks(
+  root: HTMLElement,
+  baseUrl: string,
+  currentUrl: string
+): {
+  links: string[];
+  alternates: { hreflang: string; href: string }[];
+  canonical: string | null;
+  images: string[];
+} {
+  const links: string[] = [];
+  const alternates: { hreflang: string; href: string }[] = [];
+  let canonical: string | null = null;
   const baseUrlObj = new URL(baseUrl);
-  const images = [];
+  const images: string[] = [];
 
   // 1. Anchors
   const anchors = root.querySelectorAll("a");
@@ -899,23 +944,23 @@ export function extractLinks(root, baseUrl, currentUrl) {
   }
 
   return {
-    links: [...new Set(links)],
+    links: Array.from(new Set(links)),
     alternates,
     canonical,
-    images: [...new Set(images)],
+    images: Array.from(new Set(images)),
   };
 }
 
 export async function processSitemapUrls(
-  urls,
-  baseUrl,
-  maxPages,
-  cfg,
-  onProgress,
-  robotsRules = { disallowed: [], allowed: [] },
-  getBrowser,
-) {
-  const sitemapData = new Map();
+  urls: string[],
+  baseUrl: string,
+  maxPages: number,
+  cfg: CrawlerConfig,
+  onProgress?: (url: string, count: number) => void,
+  robotsRules: RobotsRulesCompiled = { disallowed: [], allowed: [] },
+  getBrowser?: () => Promise<Browser>,
+): Promise<Map<string, SitemapItem>> {
+  const sitemapData = new Map<string, SitemapItem>();
   const urlsToProcess = urls
     .filter((url) => {
       try {
@@ -942,7 +987,7 @@ export async function processSitemapUrls(
     return null;
   };
 
-  const processOne = async (url) => {
+  const processOne = async (url: string) => {
     if (onProgress) {
       onProgress(url, sitemapData.size + 1);
     }
@@ -960,7 +1005,7 @@ export async function processSitemapUrls(
         lastmod,
         priority,
         alternates: [],
-        images: images || [],
+        images: images ? images.map(img => typeof img === 'string' ? { loc: img } : img) : [],
       });
     }
   };
@@ -974,7 +1019,7 @@ export async function processSitemapUrls(
       activeCount++;
       try {
         await processOne(url);
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Error processing sitemap URL ${url}:`, error.message);
       } finally {
         activeCount--;
@@ -992,9 +1037,16 @@ export async function processSitemapUrls(
   return sitemapData;
 }
 
-export async function getUrlMetadata(url, getBrowser) {
+export async function getUrlMetadata(
+  url: string,
+  getBrowser?: () => Promise<Browser>
+): Promise<{
+  lastmod: string | null;
+  isIndexable: boolean;
+  images: string[];
+}> {
   const cached = crawlCache[url];
-  const headers = {};
+  const headers: Record<string, string> = {};
   if (cached) {
     if (cached.lastmodHeader) {
       headers["If-Modified-Since"] = cached.lastmodHeader;
@@ -1005,8 +1057,8 @@ export async function getUrlMetadata(url, getBrowser) {
   }
 
   let httpSuccess = false;
-  let response = null;
-  let root = null;
+  let response: any = null;
+  let root: HTMLElement | null = null;
   let pageIndexable = false;
 
   const origin = new URL(url).origin;
@@ -1025,7 +1077,7 @@ export async function getUrlMetadata(url, getBrowser) {
       }
       if (response.status === 200) {
         root = parse(response.data || "");
-        pageIndexable = isIndexable(response.headers, root);
+        pageIndexable = isIndexable(response.headers as any, root);
         httpSuccess = true;
       }
     } catch {
@@ -1033,7 +1085,7 @@ export async function getUrlMetadata(url, getBrowser) {
     }
   }
 
-  if (httpSuccess) {
+  if (httpSuccess && response && root) {
     if (!pageIndexable) {
       const result = { lastmod: null, isIndexable: false, images: [] };
       crawlCache[url] = {
@@ -1044,7 +1096,7 @@ export async function getUrlMetadata(url, getBrowser) {
       return result;
     }
 
-    const lastmodHeader = response.headers["last-modified"];
+    const lastmodHeader = response.headers["last-modified"] as string;
     let lastmod = null;
     if (lastmodHeader) {
       const parsedDate = new Date(lastmodHeader);
@@ -1054,7 +1106,7 @@ export async function getUrlMetadata(url, getBrowser) {
     }
 
     // Extract images
-    const images = [];
+    const images: string[] = [];
     const imgTags = root.querySelectorAll("img");
     for (const img of imgTags) {
       const src = img.getAttribute("src");
@@ -1068,7 +1120,7 @@ export async function getUrlMetadata(url, getBrowser) {
       }
     }
 
-    const result = { lastmod, isIndexable: true, images: [...new Set(images)] };
+    const result = { lastmod, isIndexable: true, images: Array.from(new Set(images)) };
     crawlCache[url] = {
       lastmodHeader: response.headers["last-modified"] || null,
       etag: response.headers["etag"] || null,
@@ -1106,7 +1158,7 @@ export async function getUrlMetadata(url, getBrowser) {
 
         const metaNoIndex = await page.evaluate(() => {
           const meta = document.querySelector('meta[name="robots" i]');
-          return meta && /noindex/i.test(meta.getAttribute("content") || "");
+          return !!(meta && /noindex/i.test(meta.getAttribute("content") || ""));
         });
 
         if (metaNoIndex) {
@@ -1128,12 +1180,12 @@ export async function getUrlMetadata(url, getBrowser) {
         }
 
         // Extract images in evaluate
-        const images = await page.evaluate(() => {
+        const imgUrls = await page.evaluate(() => {
           return Array.from(document.querySelectorAll("img[src]"))
             .map((img) => img.getAttribute("src"))
-            .filter(Boolean);
+            .filter(Boolean) as string[];
         });
-        const normalizedImages = images
+        const normalizedImages = imgUrls
           .map((src) => {
             try {
               return normalizeUrl(src, url);
@@ -1141,13 +1193,14 @@ export async function getUrlMetadata(url, getBrowser) {
               return null;
             }
           })
-          .filter(Boolean)
-          .filter(isValidImageUrl);
+          .filter(Boolean) as string[];
+
+        const validImages = normalizedImages.filter(isValidImageUrl);
 
         return {
           lastmod: null,
           isIndexable: true,
-          images: [...new Set(normalizedImages)],
+          images: Array.from(new Set(validImages)),
         };
       } finally {
         try {
@@ -1162,13 +1215,20 @@ export async function getUrlMetadata(url, getBrowser) {
   return { lastmod: null, isIndexable: false, images: [] };
 }
 
-export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
+export async function createSitemap(
+  websiteUrl: string,
+  maxPages = 100,
+  onProgress?: (url: string, count: number) => void
+): Promise<{
+  sitemap: string;
+  stats: any;
+}> {
   renderCache.clear(); // Clear the render cache to start each crawl run fresh
   initCrawlCache(); // Load cached requests and initialize the object
   const stats = new SitemapStats(websiteUrl);
   const baseUrl = new URL(websiteUrl).origin;
 
-  let puppeteerBrowser = null;
+  let puppeteerBrowser: Browser | null = null;
   const getBrowser = async () => {
     if (!puppeteerBrowser) {
       puppeteerBrowser = await puppeteer.launch({
@@ -1185,17 +1245,17 @@ export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
   };
 
   try {
-    let robotsRules = { disallowed: [], allowed: [] };
+    let robotsRules: RobotsRulesCompiled = { disallowed: [], allowed: [] };
     try {
       robotsRules = await fetchRobotsTxtRules(baseUrl, getBrowser);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error setting up robots.txt rules:", e.message);
     }
 
     stats.setRobotsTxtInfo(robotsRules.disallowed.map((r) => r.pattern));
 
     const sitemapUrlsList = await discoverSitemap(baseUrl, getBrowser);
-    let sitemapUrls = [];
+    let sitemapUrls: string[] = [];
 
     if (sitemapUrlsList && sitemapUrlsList.length > 0) {
       const parsedResults = await Promise.all(
@@ -1203,7 +1263,7 @@ export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
           fetchAndParseSitemap(url, getBrowser).catch(() => []),
         ),
       );
-      sitemapUrls = [...new Set(parsedResults.flat())];
+      sitemapUrls = Array.from(new Set(parsedResults.flat()));
       stats.setSitemapPages(sitemapUrls.length);
 
       if (onProgress) {
@@ -1247,7 +1307,7 @@ export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
       );
     }
 
-    const finalData = new Map(crawledData);
+    const finalData = new Map<string, SitemapItem>(crawledData);
     const uncrawledUrls = sitemapUrls.filter((url) => !finalData.has(url));
 
     if (uncrawledUrls.length > 0 && finalData.size < maxPages) {
@@ -1296,21 +1356,21 @@ export async function createSitemap(websiteUrl, maxPages = 100, onProgress) {
       sitemap: generateSitemap(finalData),
       stats: stats.toJSON(),
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Critical error during createSitemap:", error.message);
     try {
       // Persist partial stats collected on error
       await stats.save();
       saveCache(crawlCache);
-    } catch (saveError) {
+    } catch (saveError: any) {
       console.error("Could not save partial stats:", saveError.message);
     }
     throw error;
   } finally {
     if (puppeteerBrowser) {
       try {
-        await puppeteerBrowser.close();
-      } catch (e) {
+        await (puppeteerBrowser as Browser).close();
+      } catch (e: any) {
         console.error(
           "Error closing browser in createSitemap finally block:",
           e.message,

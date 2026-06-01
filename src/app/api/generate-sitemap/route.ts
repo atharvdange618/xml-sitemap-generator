@@ -1,9 +1,10 @@
+import { NextRequest } from "next/server";
 import { createSitemap } from "@/utils/sitemapGenerator";
 import zlib from "zlib";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request) {
+export async function GET(request: NextRequest): Promise<Response> {
   try {
     const { searchParams } = new URL(request.url);
     const url = searchParams.get("url");
@@ -20,7 +21,7 @@ export async function GET(request) {
       async start(controller) {
         const encoder = new TextEncoder();
 
-        const onProgress = (crawledUrl, count) => {
+        const onProgress = (crawledUrl: string, count: number) => {
           const progressData = { type: "progress", url: crawledUrl, count };
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(progressData)}\n\n`),
@@ -30,15 +31,17 @@ export async function GET(request) {
         try {
           const { sitemap, stats } = await createSitemap(
             url,
-            parseInt(maxPages, 10) || 100,
+            parseInt(maxPages || "100", 10) || 100,
             onProgress,
           );
-          const gzipSitemap = zlib.gzipSync(Buffer.from(sitemap)).toString("base64");
+          const gzipSitemap = zlib
+            .gzipSync(Buffer.from(sitemap))
+            .toString("base64");
           const doneData = { type: "done", sitemap, gzipSitemap, stats };
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(doneData)}\n\n`),
           );
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error during sitemap generation:", error);
           const errorData = { type: "error", message: error.message };
           controller.enqueue(

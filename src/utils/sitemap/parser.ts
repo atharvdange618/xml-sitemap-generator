@@ -3,16 +3,21 @@ import {
   fetchWithRetry,
   fetchUrlWithPuppeteer,
   checkUrlWithPuppeteer,
-} from "./httpClient.js";
-import { isValidUrl, escapeXml } from "./urlUtils.js";
+} from "./httpClient";
+import { isValidUrl, escapeXml } from "./urlUtils";
+import { Browser } from "puppeteer";
+import { SitemapItem } from "../../types/sitemap";
 
-export async function fetchAndParseSitemap(sitemapUrl, getBrowser) {
+export async function fetchAndParseSitemap(
+  sitemapUrl: string,
+  getBrowser?: () => Promise<Browser>
+): Promise<string[]> {
   try {
-    let xml = null;
+    let xml: string | null = null;
     try {
       const response = await fetchWithRetry(sitemapUrl);
       xml = response.data;
-    } catch (error) {
+    } catch (error: any) {
       if (getBrowser) {
         console.warn(
           `HTTP failed to fetch sitemap from ${sitemapUrl} (${error.message}). Attempting Puppeteer fallback.`,
@@ -32,14 +37,14 @@ export async function fetchAndParseSitemap(sitemapUrl, getBrowser) {
     }
 
     return parseSitemap(xml);
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Error fetching sitemap from ${sitemapUrl}:`, error.message);
     return [];
   }
 }
 
-export function parseSitemap(xml) {
-  const urls = [];
+export function parseSitemap(xml: string): string[] {
+  const urls: string[] = [];
   const locMatches = xml.match(/<loc>(.*?)<\/loc>/g) || [];
 
   for (const match of locMatches) {
@@ -55,8 +60,11 @@ export function parseSitemap(xml) {
   return urls;
 }
 
-export async function parseSitemapIndex(xml, getBrowser) {
-  const sitemapUrls = [];
+export async function parseSitemapIndex(
+  xml: string,
+  getBrowser?: () => Promise<Browser>
+): Promise<string[]> {
+  const sitemapUrls: string[] = [];
   const locMatches = xml.match(/<loc>(.*?)<\/loc>/g) || [];
 
   for (const match of locMatches) {
@@ -69,7 +77,7 @@ export async function parseSitemapIndex(xml, getBrowser) {
     }
   }
 
-  const allUrls = [];
+  const allUrls: string[] = [];
   // Fetch sub-sitemaps in parallel with Promise.all
   const results = await Promise.all(
     sitemapUrls.map((sitemapUrl) =>
@@ -84,7 +92,10 @@ export async function parseSitemapIndex(xml, getBrowser) {
   return allUrls;
 }
 
-export async function discoverSitemap(baseUrl, getBrowser) {
+export async function discoverSitemap(
+  baseUrl: string,
+  getBrowser?: () => Promise<Browser>
+): Promise<string[]> {
   const commonPaths = [
     "/sitemap.xml",
     "/sitemap_index.xml",
@@ -98,7 +109,7 @@ export async function discoverSitemap(baseUrl, getBrowser) {
     try {
       const robotsResponse = await http.get(`${baseUrl}/robots.txt`);
       robotsContent = robotsResponse.data;
-    } catch (error) {
+    } catch (error: any) {
       if (getBrowser) {
         console.warn(
           `HTTP failed to fetch robots.txt (${error.message}). Attempting Puppeteer fallback.`,
@@ -122,7 +133,7 @@ export async function discoverSitemap(baseUrl, getBrowser) {
   }
 
   const uniquePaths = [...new Set(commonPaths)];
-  const activeSitemaps = [];
+  const activeSitemaps: string[] = [];
 
   for (const path of uniquePaths) {
     try {
@@ -157,7 +168,7 @@ export async function discoverSitemap(baseUrl, getBrowser) {
   return activeSitemaps;
 }
 
-export function generateSitemap(sitemapData) {
+export function generateSitemap(sitemapData: Map<string, SitemapItem>): string {
   const entries = Array.from(sitemapData.entries());
 
   // Enforce 50,000 URL limits by chunking to a index sitemap if exceeded
@@ -206,7 +217,7 @@ export function generateSitemap(sitemapData) {
       const uniqueImages = [...new Set(images)].slice(0, 1000);
       for (const imgUrl of uniqueImages) {
         xml += "    <image:image>\n";
-        xml += `      <image:loc>${escapeXml(imgUrl)}</image:loc>\n`;
+        xml += `      <image:loc>${escapeXml(typeof imgUrl === 'string' ? imgUrl : (imgUrl as any).loc)}</image:loc>\n`;
         xml += "    </image:image>\n";
       }
     }

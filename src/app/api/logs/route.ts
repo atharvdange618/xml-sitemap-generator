@@ -1,8 +1,9 @@
+import { NextRequest } from "next/server";
 import { getRecentLogs, getLatestLog } from "@/utils/statsLogger";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request) {
+export async function GET(request: NextRequest): Promise<Response> {
   try {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get("limit") || "10", 10);

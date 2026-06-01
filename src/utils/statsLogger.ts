@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { StatsJson, CrawlError } from "../types/sitemap";
 
 const LOGS_DIR = path.join(process.cwd(), ".logs");
 
@@ -8,7 +9,26 @@ if (!fs.existsSync(LOGS_DIR)) {
 }
 
 export class SitemapStats {
-  constructor(websiteUrl) {
+  public websiteUrl: string;
+  public startTime: Date;
+  public endTime: Date | null;
+  public sitemapPagesFound: number;
+  public pagesCrawled: number;
+  public finalSitemapTotal: number;
+  public sitemapOnlyPages: number;
+  public crawledOnlyPages: number;
+  public overlapPages: number;
+  public errors: CrawlError[];
+  public crawlDepth: {
+    maxDepth: number;
+    depthDistribution: Record<string, number>;
+  };
+  public robotsTxtRules: {
+    rules: string[];
+    hadRobotsTxt: boolean;
+  };
+
+  constructor(websiteUrl: string) {
     this.websiteUrl = websiteUrl;
     this.startTime = new Date();
     this.endTime = null;
@@ -29,30 +49,30 @@ export class SitemapStats {
     };
   }
 
-  setRobotsTxtInfo(rules) {
+  setRobotsTxtInfo(rules: string[]): void {
     this.robotsTxtRules.rules = rules;
     this.robotsTxtRules.hadRobotsTxt = rules.length > 0;
   }
 
-  setSitemapPages(count) {
+  setSitemapPages(count: number): void {
     this.sitemapPagesFound = count;
   }
 
-  incrementCrawledPages() {
+  incrementCrawledPages(): void {
     this.pagesCrawled++;
   }
 
-  setTotalPages(count) {
+  setTotalPages(count: number): void {
     this.finalSitemapTotal = count;
   }
 
-  setPageBreakdown(sitemapOnly, crawledOnly, overlap) {
+  setPageBreakdown(sitemapOnly: number, crawledOnly: number, overlap: number): void {
     this.sitemapOnlyPages = sitemapOnly;
     this.crawledOnlyPages = crawledOnly;
     this.overlapPages = overlap;
   }
 
-  addError(url, errorMessage) {
+  addError(url: string, errorMessage: string): void {
     this.errors.push({
       url,
       error: errorMessage,
@@ -60,24 +80,24 @@ export class SitemapStats {
     });
   }
 
-  updateDepthInfo(depth) {
+  updateDepthInfo(depth: number): void {
     if (depth > this.crawlDepth.maxDepth) {
       this.crawlDepth.maxDepth = depth;
     }
-    this.crawlDepth.depthDistribution[depth] =
-      (this.crawlDepth.depthDistribution[depth] || 0) + 1;
+    const currentCount = this.crawlDepth.depthDistribution[String(depth)] || 0;
+    this.crawlDepth.depthDistribution[String(depth)] = currentCount + 1;
   }
 
-  finish() {
+  finish(): void {
     this.endTime = new Date();
   }
 
-  getDuration() {
+  getDuration(): number {
     const end = this.endTime || new Date();
-    return Math.round((end - this.startTime) / 1000);
+    return Math.round((end.getTime() - this.startTime.getTime()) / 1000);
   }
 
-  toJSON() {
+  toJSON(): StatsJson {
     return {
       websiteUrl: this.websiteUrl,
       timestamp: this.startTime.toISOString(),
@@ -104,7 +124,7 @@ export class SitemapStats {
     };
   }
 
-  getSummary() {
+  getSummary(): string {
     const json = this.toJSON();
     return `
 ╔════════════════════════════════════════════════════════════════╗
@@ -138,7 +158,7 @@ export class SitemapStats {
     `.trim();
   }
 
-  async save() {
+  async save(): Promise<string | null> {
     this.finish();
     const timestamp = this.startTime.toISOString().replace(/[:.]/g, "-");
     const domain = new URL(this.websiteUrl).hostname.replace(/\./g, "_");
@@ -159,14 +179,14 @@ export class SitemapStats {
       );
 
       return filepath;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error saving stats: ${error.message}`);
       return null;
     }
   }
 }
 
-export async function getRecentLogs(limit = 10) {
+export async function getRecentLogs(limit = 10): Promise<StatsJson[]> {
   try {
     const files = await fs.promises.readdir(LOGS_DIR);
     const jsonFiles = files
@@ -175,7 +195,7 @@ export async function getRecentLogs(limit = 10) {
       .reverse()
       .slice(0, limit);
 
-    const logs = [];
+    const logs: StatsJson[] = [];
     for (const file of jsonFiles) {
       const content = await fs.promises.readFile(
         path.join(LOGS_DIR, file),
@@ -185,13 +205,13 @@ export async function getRecentLogs(limit = 10) {
     }
 
     return logs;
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Error reading logs: ${error.message}`);
     return [];
   }
 }
 
-export async function getLatestLog() {
+export async function getLatestLog(): Promise<StatsJson | null> {
   try {
     const latestPath = path.join(LOGS_DIR, "latest.json");
     const content = await fs.promises.readFile(latestPath, "utf-8");

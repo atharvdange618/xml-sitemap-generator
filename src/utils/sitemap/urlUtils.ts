@@ -1,4 +1,4 @@
-export function isValidImageUrl(url) {
+export function isValidImageUrl(url: string): boolean {
   try {
     const urlObj = new URL(url);
     const allowedExtensions = [
@@ -20,7 +20,7 @@ export function isValidImageUrl(url) {
 /**
  * Escapes special characters for XML compliance.
  */
-export function escapeXml(value) {
+export function escapeXml(value: string | null | undefined): string {
   if (!value) return "";
   return value
     .replace(/&/g, "&amp;")
@@ -33,7 +33,7 @@ export function escapeXml(value) {
 /**
  * Normalizes URLs: strips tracking parameters and standardizes trailing slashes.
  */
-export function normalizeUrl(urlStr, baseUrl) {
+export function normalizeUrl(urlStr: string, baseUrl?: string): string {
   try {
     const url = new URL(urlStr, baseUrl);
     url.hash = "";
@@ -85,7 +85,7 @@ export function normalizeUrl(urlStr, baseUrl) {
   }
 }
 
-export function isValidUrl(url) {
+export function isValidUrl(url: string): boolean {
   try {
     new URL(url);
   } catch {
