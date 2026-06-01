@@ -196,7 +196,7 @@ export async function getLatestLog() {
     const latestPath = path.join(LOGS_DIR, "latest.json");
     const content = await fs.promises.readFile(latestPath, "utf-8");
     return JSON.parse(content);
-  } catch (error) {
+  } catch {
     return null;
   }
 }
