@@ -5,7 +5,11 @@ import { config, CrawlerConfig } from "./config";
 import { renderCache, crawlCache, initCrawlCache, saveCache } from "./cache";
 import { isValidImageUrl, normalizeUrl, isValidUrl } from "./urlUtils";
 import { fetchWithRetry } from "./httpClient";
-import { fetchRobotsTxtRules, isPathAllowed, RobotsRulesCompiled } from "./robots";
+import {
+  fetchRobotsTxtRules,
+  isPathAllowed,
+  RobotsRulesCompiled,
+} from "./robots";
 import {
   fetchAndParseSitemap,
   discoverSitemap,
@@ -15,12 +19,110 @@ import { SitemapItem } from "../../types/sitemap";
 
 const CONCURRENCY = 5;
 
+class RecyclableBrowser {
+  private currentBrowser: Browser | null = null;
+  private currentBrowserPagesOpened = 0;
+  private activePagesPerBrowser = new Map<Browser, number>();
+  private maxPages = 50; // Recycle after 50 pages to release memory leaks
+
+  async init() {
+    if (!this.currentBrowser) {
+      this.currentBrowser = await puppeteer.launch({
+        headless: true,
+        args: [
+          "--disable-blink-features=AutomationControlled",
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu", // Turn off GPU for stability and to prevent crashes on Windows
+        ],
+      });
+      this.currentBrowserPagesOpened = 0;
+      this.activePagesPerBrowser.set(this.currentBrowser, 0);
+    }
+  }
+
+  async newPage(): Promise<Page> {
+    await this.init();
+    
+    const browserToUse = this.currentBrowser!;
+    const page = await browserToUse.newPage();
+    
+    // Page successfully created, track metrics
+    this.currentBrowserPagesOpened++;
+    const currentActive = this.activePagesPerBrowser.get(browserToUse) || 0;
+    this.activePagesPerBrowser.set(browserToUse, currentActive + 1);
+
+    // If the browser has reached threshold, mark it for replacement.
+    // The next newPage() request will get a brand new browser instance.
+    if (this.currentBrowserPagesOpened >= this.maxPages) {
+      console.log(
+        `[RecyclableBrowser] Marking browser instance for recycling (Pages opened: ${this.currentBrowserPagesOpened})`
+      );
+      this.currentBrowser = null;
+    }
+
+    // Wrap page.close to decrement active count for this specific browser
+    const realClose = page.close.bind(page);
+    let closed = false;
+    page.close = async () => {
+      if (!closed) {
+        closed = true;
+        const active = this.activePagesPerBrowser.get(browserToUse) || 0;
+        const newActive = Math.max(0, active - 1);
+        this.activePagesPerBrowser.set(browserToUse, newActive);
+        
+        // If there are no more active pages for this browser and it has been recycled, close it!
+        if (newActive === 0 && browserToUse !== this.currentBrowser) {
+          this.activePagesPerBrowser.delete(browserToUse);
+          browserToUse.close()
+            .catch((e: any) =>
+              console.error("Error closing recycled browser:", e.message)
+            )
+            .finally(() => {
+              try {
+                browserToUse.process()?.kill("SIGKILL");
+              } catch {}
+            });
+        }
+      }
+      return realClose();
+    };
+
+    return page;
+  }
+
+  async close() {
+    if (this.currentBrowser) {
+      const browser = this.currentBrowser;
+      this.activePagesPerBrowser.delete(browser);
+      this.currentBrowser = null;
+      await browser.close().catch(() => {}).finally(() => {
+        try {
+          browser.process()?.kill("SIGKILL");
+        } catch {}
+      });
+    }
+    for (const browser of this.activePagesPerBrowser.keys()) {
+      await browser.close().catch(() => {}).finally(() => {
+        try {
+          browser.process()?.kill("SIGKILL");
+        } catch {}
+      });
+    }
+    this.activePagesPerBrowser.clear();
+  }
+}
+
 export function calculatePriority(depth: number): string {
   const priority = 1.0 - depth * 0.1;
   return Math.max(0.1, priority).toFixed(1);
 }
 
-export function isIndexable(headers: Record<string, string> | undefined, root: HTMLElement): boolean {
+export function isIndexable(
+  headers: Record<string, string> | undefined,
+  root: HTMLElement,
+): boolean {
   // 1. Check X-Robots-Tag header
   const xRobots = headers?.["x-robots-tag"];
   if (xRobots && /noindex/i.test(String(xRobots))) {
@@ -101,7 +203,11 @@ export function detectCSR(html: string, root: HTMLElement): boolean {
   return score >= 3;
 }
 
-export function shouldRender(currentUrl: string, html: string, root: HTMLElement): boolean {
+export function shouldRender(
+  currentUrl: string,
+  html: string,
+  root: HTMLElement,
+): boolean {
   try {
     const origin = new URL(currentUrl).origin;
     const cached = renderCache.get(origin);
@@ -136,24 +242,16 @@ export async function crawlSite(
   const normalizedBase = normalizeUrl(baseUrl, baseUrl);
   const queue = [{ url: normalizedBase, depth: 0 }];
   const visited = new Set([normalizedBase]);
-  let puppeteerBrowser: Browser | null = null;
+  let puppeteerBrowser: any = null;
   let activeCount = 0;
 
   const getBrowser =
     getBrowserArg ||
     (async () => {
       if (!puppeteerBrowser) {
-        puppeteerBrowser = await puppeteer.launch({
-          headless: true,
-          args: [
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-          ],
-        });
+        puppeteerBrowser = new RecyclableBrowser();
       }
-      return puppeteerBrowser;
+      return puppeteerBrowser as any as Browser;
     });
 
   const next = () => {
@@ -266,7 +364,7 @@ export async function crawlUrl(
   currentUrl: string,
   baseUrl: string,
   cfg: CrawlerConfig,
-  getBrowser: () => Promise<Browser>
+  getBrowser: () => Promise<Browser>,
 ): Promise<{
   links: string[];
   lastmod: string | null;
@@ -463,7 +561,11 @@ export async function crawlUrl(
   }
 }
 
-export async function getLinksWithHTTP(baseUrl: string, currentUrl: string, cfg: CrawlerConfig): Promise<{
+export async function getLinksWithHTTP(
+  baseUrl: string,
+  currentUrl: string,
+  cfg: CrawlerConfig,
+): Promise<{
   links: string[];
   isCSR: boolean;
   lastmod: string | null;
@@ -648,7 +750,7 @@ export async function getLinksWithHTTP(baseUrl: string, currentUrl: string, cfg:
 export async function getLinksWithPuppeteer(
   browser: Browser,
   baseUrl: string,
-  currentUrl: string
+  currentUrl: string,
 ): Promise<{
   links: string[];
   alternates: { hreflang: string; href: string }[];
@@ -694,7 +796,13 @@ export async function getLinksWithPuppeteer(
     const headers = response?.headers() || {};
     const xRobots = headers["x-robots-tag"];
     if (xRobots && /noindex/i.test(xRobots)) {
-      return { links: [], alternates: [], canonical: null, isIndexable: false, images: [] };
+      return {
+        links: [],
+        alternates: [],
+        canonical: null,
+        isIndexable: false,
+        images: [],
+      };
     }
 
     // Wait Strategy (race between body content density or selector markers)
@@ -720,7 +828,13 @@ export async function getLinksWithPuppeteer(
     });
 
     if (metaNoIndex) {
-      return { links: [], alternates: [], canonical: null, isIndexable: false, images: [] };
+      return {
+        links: [],
+        alternates: [],
+        canonical: null,
+        isIndexable: false,
+        images: [],
+      };
     }
 
     const pageData = await page.evaluate((baseUrlStr) => {
@@ -729,8 +843,12 @@ export async function getLinksWithPuppeteer(
       let canonical: string | null = null;
 
       // Piercing Shadow DOM to find all anchors
-      function findAllAnchors(rootNode: Document | ShadowRoot = document): HTMLAnchorElement[] {
-        const anchors = Array.from(rootNode.querySelectorAll("a[href]")) as HTMLAnchorElement[];
+      function findAllAnchors(
+        rootNode: Document | ShadowRoot = document,
+      ): HTMLAnchorElement[] {
+        const anchors = Array.from(
+          rootNode.querySelectorAll("a[href]"),
+        ) as HTMLAnchorElement[];
         const shadowRoots = Array.from(rootNode.querySelectorAll("*"))
           .map((el) => el.shadowRoot)
           .filter(Boolean) as ShadowRoot[];
@@ -871,7 +989,7 @@ export async function getLinksWithPuppeteer(
 export function extractLinks(
   root: HTMLElement,
   baseUrl: string,
-  currentUrl: string
+  currentUrl: string,
 ): {
   links: string[];
   alternates: { hreflang: string; href: string }[];
@@ -1005,7 +1123,9 @@ export async function processSitemapUrls(
         lastmod,
         priority,
         alternates: [],
-        images: images ? images.map(img => typeof img === 'string' ? { loc: img } : img) : [],
+        images: images
+          ? images.map((img) => (typeof img === "string" ? { loc: img } : img))
+          : [],
       });
     }
   };
@@ -1039,7 +1159,7 @@ export async function processSitemapUrls(
 
 export async function getUrlMetadata(
   url: string,
-  getBrowser?: () => Promise<Browser>
+  getBrowser?: () => Promise<Browser>,
 ): Promise<{
   lastmod: string | null;
   isIndexable: boolean;
@@ -1120,7 +1240,11 @@ export async function getUrlMetadata(
       }
     }
 
-    const result = { lastmod, isIndexable: true, images: Array.from(new Set(images)) };
+    const result = {
+      lastmod,
+      isIndexable: true,
+      images: Array.from(new Set(images)),
+    };
     crawlCache[url] = {
       lastmodHeader: response.headers["last-modified"] || null,
       etag: response.headers["etag"] || null,
@@ -1158,7 +1282,9 @@ export async function getUrlMetadata(
 
         const metaNoIndex = await page.evaluate(() => {
           const meta = document.querySelector('meta[name="robots" i]');
-          return !!(meta && /noindex/i.test(meta.getAttribute("content") || ""));
+          return !!(
+            meta && /noindex/i.test(meta.getAttribute("content") || "")
+          );
         });
 
         if (metaNoIndex) {
@@ -1218,7 +1344,7 @@ export async function getUrlMetadata(
 export async function createSitemap(
   websiteUrl: string,
   maxPages = 100,
-  onProgress?: (url: string, count: number) => void
+  onProgress?: (url: string, count: number) => void,
 ): Promise<{
   sitemap: string;
   stats: any;
@@ -1228,20 +1354,12 @@ export async function createSitemap(
   const stats = new SitemapStats(websiteUrl);
   const baseUrl = new URL(websiteUrl).origin;
 
-  let puppeteerBrowser: Browser | null = null;
+  let puppeteerBrowser: any = null;
   const getBrowser = async () => {
     if (!puppeteerBrowser) {
-      puppeteerBrowser = await puppeteer.launch({
-        headless: true,
-        args: [
-          "--disable-blink-features=AutomationControlled",
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-        ],
-      });
+      puppeteerBrowser = new RecyclableBrowser();
     }
-    return puppeteerBrowser;
+    return puppeteerBrowser as any as Browser;
   };
 
   try {
