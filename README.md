@@ -1,8 +1,10 @@
 # XML Sitemap Generator
 
-**The easiest way to generate perfect XML sitemaps for any website.**
+**The easiest way to generate perfect, SEO-optimized XML sitemaps for any website.**
 
 Generate comprehensive, SEO-optimized XML sitemaps for your website with real-time progress tracking, intelligent crawling, and automatic sitemap discovery. This modern web application crawls your website, intelligently detects both SSR and CSR pages, respects robots.txt rules, and merges results from existing sitemaps to ensure 100% coverage.
+
+---
 
 ## Features
 
@@ -10,36 +12,51 @@ Generate comprehensive, SEO-optimized XML sitemaps for your website with real-ti
 
 - **Intelligent Crawling** - Crawls up to 1000 pages per site (configurable from 10-1000).
 - **Sitemap Discovery** - Automatically finds and parses existing sitemaps from `robots.txt` or common paths to ensure no page is missed.
-- **Hybrid Rendering Support** - Seamlessly handles both Server-Side Rendered (SSR) and Client-Side Rendered (CSR) pages using a sophisticated heuristic detection and Puppeteer fallback.
+- **Hybrid Rendering Support** - Seamlessly handles both Server-Side Rendered (SSR) and Client-Side Rendered (CSR) pages using sophisticated heuristic detection and Puppeteer fallback.
 - **Real-time Progress Tracking** - Watch your sitemap being built live with Server-Sent Events (SSE) streaming.
-- **Concurrent Processing** - Batch crawling with high-performance concurrency (5 concurrent pages).
+- **Concurrent Processing** - Batch crawling with high-performance concurrency (5 concurrent pages by default).
 - **Smart Link Extraction** - Extracts internal links, canonicals, and alternate links while avoiding non-HTML resources.
 
 ### Ethical & Compliant
 
-- **robots.txt Compliance** - Automatically fetches and rigorously respects disallow rules from your site's robots.txt.
+- **robots.txt Compliance** - Automatically fetches and rigorously respects disallow rules from your site's robots.txt based on RFC 9309 standards.
 - **Priority-based Sitemap** - Assigns priority values based on page depth (1.0 for homepage, decreasing by 0.1 per level).
 - **Standards Compliant** - Generates XML sitemaps fully compliant with the Sitemaps.org protocol.
 - **lastmod Support** - Includes last-modified dates from HTTP headers or page generation time.
 
-### Insights & Logging
+### Insights & Crawl History
 
 - **Detailed Statistics** - Provides a comprehensive breakdown of discovered pages, crawl depth, and errors.
-- **JSON Logs** - Automatically saves generation stats to `public/logs/` for every run, including a `latest.json` for quick access.
+- **Crawl History Dashboard** - View details of your recent crawls directly in the UI dashboard, fetching logs dynamically.
+- **JSON Logs** - Automatically saves generation stats to the `.logs/` directory for every run, including a `latest.json` for quick access.
 - **Visual Summary** - Beautiful CLI-style box summary showing the health and outcome of every sitemap generation.
 
 ### Modern User Experience
 
 - **Minimalist UI** - Sleek, dark-themed design built with Next.js and Tailwind CSS.
 - **Live Feedback** - Real-time progress indicator showing current URL and running page count.
-- **One-Click Download** - Instant sitemap.xml download with deployment instructions.
+- **One-Click Download** - Instant sitemap.xml and compressed sitemap.xml.gz download with robots.txt deployment instructions.
+
+---
+
+## Technology Stack
+
+- **[Next.js](https://nextjs.org/)** `16.x` - Web framework (App Router)
+- **[TypeScript](https://www.typescriptlang.org/)** `6.x` - Type safety
+- **[Puppeteer](https://pptr.dev/)** - Headless Chrome for CSR execution
+- **[Axios](https://axios-http.com/)** - High-speed HTTP client with retry logic
+- **[node-html-parser](https://github.com/taoqf/node-html-parser)** - Fast HTML DOM parsing
+- **[Tailwind CSS](https://tailwindcss.com/)** `4.x` - Modern component styling
+- **[Framer Motion](https://www.framer.com/motion/)** - Fluent animations & transitions
+
+---
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+
-- [Bun](https://bun.sh/) (recommended) or npm
+- [pnpm](https://pnpm.io/) (recommended)
 
 ### Installation
 
@@ -53,9 +70,7 @@ Generate comprehensive, SEO-optimized XML sitemaps for your website with real-ti
 2. Install dependencies:
 
    ```sh
-   bun install
-   # or
-   npm install
+   pnpm install
    ```
 
 ### Running Locally
@@ -63,82 +78,63 @@ Generate comprehensive, SEO-optimized XML sitemaps for your website with real-ti
 Start the development server:
 
 ```sh
-bun dev
-# or
-npm run dev
+pnpm dev
 ```
 
 Visit [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Building for Production
 
+Compile and run type checks:
+
 ```sh
-bun run build
-bun start
+pnpm build
+pnpm start
 ```
 
-## Usage
-
-### Quick Start
-
-1. **Enter your website's URL** (e.g., `https://example.com`)
-2. **Select the maximum number of pages** to crawl using the slider (10-1000)
-3. **Click "Generate Sitemap"** and watch the real-time progress
-4. **Download** the generated `sitemap.xml` file
-5. **Review Stats**: Check the console for a detailed breakdown or look at `public/logs/latest.json`.
-
-### robots.txt Deployment
-
-After downloading, deploy the sitemap to your website's root directory and reference it in your `robots.txt`:
-
-```text
-Sitemap: https://example.com/sitemap.xml
-```
+---
 
 ## How It Works
-
-### Architecture Overview
 
 This application uses a multi-stage **discovery and crawling engine**:
 
 1. **Sitemap Discovery**: The engine first checks `robots.txt` for existing sitemaps and common locations. Found URLs are added to the initial set.
 2. **Intelligent Crawling**:
    - **HTTP Phase**: First attempts a fast HTTP request to fetch content and extract links.
-   - **CSR Detection**: Analyzes the HTML using heuristics (content-to-script ratio, presence of framework markers like `#root`, etc.) to determine if it's a CSR app.
+   - **CSR Detection**: Analyzes the HTML using heuristics (content-to-script ratio, presence of framework markers like `#root`, `#app`, etc.) to determine if it's a Client-Side Rendered SPA.
    - **Puppeteer Phase**: If CSR is detected, it renders the page in a headless browser to extract dynamically generated links.
 3. **Merging & Metadata**: Combines URLs from existing sitemaps and the fresh crawl, fetching `lastmod` and calculating `priority` for every unique page.
 4. **Streaming**: Progress is streamed via Server-Sent Events (SSE) to provide instant feedback in the UI.
 
+---
+
 ## Configuration
 
-### CSR Detection Heuristics
+Fine-tune how the engine detects CSR apps and runs Puppeteer in [`src/utils/sitemap/config.ts`](src/utils/sitemap/config.ts):
 
-Fine-tune how the engine detects CSR apps in [`sitemapGenerator.js`](src/utils/sitemapGenerator.js):
-
-```javascript
-const config = {
+```typescript
+export const config: CrawlerConfig = {
   csr: {
-    minimalContentLength: 200, // Minimum HTML length for valid content
-    minimalChildNodes: 5, // Minimum body child nodes
-    scriptCountThreshold: 10, // Script tag threshold
-    contentScriptRatio: 1000, // HTML length per script ratio
-    rootSelectors: ["#root", "#__next"], // Framework markers
+    minimalContentLength: 200,
+    minimalChildNodes: 5,
+    scriptCountThreshold: 10,
+    contentScriptRatio: 1000,
+    rootSelectors: ["#root", "#__next", "#app", "#__nuxt", "[ng-version]"],
   },
   puppeteer: {
-    waitForSelectorsTimeout: 10000,
-    gotoTimeout: 60000,
-    waitUntil: "networkidle2",
+    waitForSelectorsTimeout: 8000,
+    gotoTimeout: 15000,
+    waitUntil: "domcontentloaded",
   },
+  logging: {
+    verbose: true,
+  },
+  maxDepth: 10,
+  concurrency: 5,
 };
 ```
 
-### Stats Logging
-
-Every run generates a JSON log in `public/logs/` containing:
-- Duration and timestamp
-- Breakdown of Sitemap-only vs. Crawled-only pages
-- Depth distribution and max depth
-- Error logs with URL and error message
+---
 
 ## Project Structure
 
@@ -148,25 +144,34 @@ xml-sitemap-generator/
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── generate-sitemap/
-│   │   │   │   └── route.js       # SSE streaming endpoint
+│   │   │   │   └── route.ts       # SSE streaming endpoint (TS)
 │   │   │   └── logs/
-│   │   │       └── route.js       # Stats retrieval endpoint
-│   │   ├── page.js                # Main UI
-│   │   └── docs/                  # App documentation
+│   │   │       └── route.ts       # Stats retrieval endpoint (TS)
+│   │   ├── layout.tsx             # Root layout (TSX)
+│   │   ├── page.tsx               # Main UI & history log panel (TSX)
+│   │   └── docs/
+│   │       └── page.tsx           # App documentation page (TSX)
+│   ├── types/
+│   │   ├── declarations.d.ts      # Global types (CSS, modules)
+│   │   └── sitemap.ts             # Shared sitemap/crawling interfaces
 │   └── utils/
-│       ├── sitemapGenerator.js    # Core discovery & crawling engine
-│       └── statsLogger.js         # Logging & statistics logic
-├── public/
-│   └── logs/                      # Auto-generated JSON stats
+│       ├── sitemap/               # Crawler engine details (TS)
+│       │   ├── cache.ts
+│       │   ├── config.ts
+│       │   ├── crawler.ts
+│       │   ├── httpClient.ts
+│       │   ├── index.ts
+│       │   ├── parser.ts
+│       │   ├── robots.ts
+│       │   └── urlUtils.ts
+│       ├── sitemapGenerator.ts    # Crawler entry point wrapper (TS)
+│       └── statsLogger.ts         # Run logging & stats compiler (TS)
+├── .logs/                         # Auto-generated JSON crawl logs
+├── tsconfig.json                  # TS compiler config
 └── README.md
 ```
 
-## Dependencies
-
-- **[Next.js](https://nextjs.org/)** `15.x` - React framework
-- **[Puppeteer](https://pptr.dev/)** - Headless Chrome for CSR
-- **[Axios](https://axios-http.com/)** - High-speed HTTP client
-- **[node-html-parser](https://github.com/taoqf/node-html-parser)** - Fast HTML DOM parsing
+---
 
 ## License
 
