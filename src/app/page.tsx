@@ -33,8 +33,7 @@ export default function Home() {
   const [url, setUrl] = useState("");
   const [maxPages, setMaxPages] = useState(100);
   const [loading, setLoading] = useState(false);
-  const [sitemapUrl, setSitemapUrl] = useState("");
-  const [gzipSitemap, setGzipSitemap] = useState("");
+  const [activeJobId, setActiveJobId] = useState("");
   const [error, setError] = useState("");
   const [progress, setProgress] = useState({ url: "", count: 0 });
   const [crawlLogs, setCrawlLogs] = useState<string[]>([]);
@@ -71,35 +70,16 @@ export default function Home() {
     fetchHistory();
   }, []);
 
-  const handleDownloadGzip = () => {
-    if (!gzipSitemap) return;
-    const binaryString = window.atob(gzipSitemap);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: "application/gzip" });
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = "sitemap.xml.gz";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
-    setSitemapUrl("");
-    setGzipSitemap("");
+    setActiveJobId("");
     setStats(null);
     setSelectedHistoryStats(null);
     setProgress({ url: "Initializing...", count: 0 });
     setCrawlLogs([
-      "[system] Starting crawler service...",
+      "[system] Contacting backend task runner...",
       "[system] Initializing request threads...",
     ]);
 
@@ -107,76 +87,93 @@ export default function Home() {
       eventSourceRef.current.close();
     }
 
-    const eventSource = new EventSource(
-      `/api/generate-sitemap?url=${encodeURIComponent(
-        url,
-      )}&maxPages=${maxPages}`,
-    );
-    eventSourceRef.current = eventSource;
+    try {
+      const res = await fetch("/api/generate-sitemap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, maxPages }),
+      });
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        switch (data.type) {
-          case "progress":
-            setProgress(data);
-            if (data.url) {
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to start crawler");
+      }
+
+      const { jobId } = await res.json();
+      setActiveJobId(jobId);
+
+      const eventSource = new EventSource(
+        `/api/generate-sitemap/status?jobId=${encodeURIComponent(jobId)}`,
+      );
+      eventSourceRef.current = eventSource;
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          switch (data.type) {
+            case "progress":
+              setProgress(data);
+              if (data.url) {
+                setCrawlLogs((prev) => [
+                  ...prev,
+                  `[crawled] #${data.count} -> ${data.url}`,
+                ]);
+              }
+              break;
+            case "done":
+              setStats(data.stats);
+              setLoading(false);
               setCrawlLogs((prev) => [
                 ...prev,
-                `[crawled] #${data.count} -> ${data.url}`,
+                `[system] Crawl completed successfully!`,
+                `[system] Discovered ${data.stats?.statistics?.crawling?.pagesDiscovered ?? 0} pages.`,
               ]);
-            }
-            break;
-          case "done":
-            const blob = new Blob([data.sitemap], { type: "application/xml" });
-            const blobUrl = URL.createObjectURL(blob);
-            setSitemapUrl(blobUrl);
-            setGzipSitemap(data.gzipSitemap || "");
-            setStats(data.stats);
-            setLoading(false);
-            setCrawlLogs((prev) => [
-              ...prev,
-              `[system] Crawl completed successfully!`,
-              `[system] Discovered ${data.stats?.statistics?.crawling?.pagesDiscovered ?? 0} pages.`,
-            ]);
-            eventSource.close();
-            fetchHistory();
+              eventSource.close();
+              fetchHistory();
 
-            setTimeout(() => {
-              const el = document.getElementById("stats-report-container");
-              if (el) {
-                el.scrollIntoView({ behavior: "smooth", block: "start" });
-              }
-            }, 300);
-            break;
-          case "error":
-            setError(
-              data.message ||
-                "An unknown error occurred during sitemap generation.",
-            );
-            setCrawlLogs((prev) => [
-              ...prev,
-              `[error] Crawl failed: ${data.message || "Unknown error"}`,
-            ]);
-            setLoading(false);
-            eventSource.close();
-            break;
+              setTimeout(() => {
+                const el = document.getElementById("stats-report-container");
+                if (el) {
+                  el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+              }, 300);
+              break;
+            case "error":
+              setError(
+                data.message ||
+                  "An unknown error occurred during sitemap generation.",
+              );
+              setCrawlLogs((prev) => [
+                ...prev,
+                `[error] Crawl failed: ${data.message || "Unknown error"}`,
+              ]);
+              setLoading(false);
+              eventSource.close();
+              break;
+          }
+        } catch (e) {
+          console.error("Failed to parse message from server:", event.data);
         }
-      } catch (e) {
-        console.error("Failed to parse message from server:", event.data);
-      }
-    };
+      };
 
-    eventSource.onerror = (err) => {
-      console.error("EventSource failed:", err);
-      setError("Failed to connect to the server for live updates.");
+      eventSource.onerror = (err) => {
+        console.error("EventSource failed:", err);
+        setError("Failed to connect to the server for live updates.");
+        setCrawlLogs((prev) => [
+          ...prev,
+          `[error] Lost connection to crawler stream.`,
+        ]);
+        setLoading(false);
+        eventSource.close();
+      };
+    } catch (err: any) {
+      setError(err.message || "An unknown error occurred.");
       setCrawlLogs((prev) => [
         ...prev,
-        `[error] Lost connection to crawler stream.`,
+        `[error] Failed to launch crawl job: ${err.message}`,
       ]);
       setLoading(false);
-      eventSource.close();
-    };
+    }
   };
 
   useEffect(() => {
@@ -513,7 +510,7 @@ export default function Home() {
             </div>
           )}
 
-          {!isHistory && sitemapUrl && (
+          {!isHistory && activeJobId && (
             <div className="border-t border-neutral-850 pt-5 flex flex-col gap-4">
               <div className="bg-neutral-950 border border-neutral-850 rounded-lg p-3.5 shadow-inner">
                 <p className="text-sm text-white mb-2 font-medium flex items-center gap-1.5">
@@ -540,23 +537,21 @@ export default function Home() {
 
               <div className="flex flex-col sm:flex-row gap-3 w-full">
                 <a
-                  href={sitemapUrl}
+                  href={`/api/generate-sitemap/download?jobId=${activeJobId}&format=xml`}
                   download="sitemap.xml"
                   className="flex-1 inline-flex items-center justify-center bg-linear-to-r from-emerald-600 to-lime-600 hover:from-emerald-500 hover:to-lime-500 text-neutral-950 hover:scale-[1.005] active:scale-[0.995] text-sm font-bold py-3 px-6 rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-950/20 text-center select-none"
                 >
                   <Download className="w-4 h-4 mr-2" />
                   Download Sitemap XML File
                 </a>
-                {gzipSitemap && (
-                  <button
-                    type="button"
-                    onClick={handleDownloadGzip}
-                    className="flex-1 inline-flex items-center justify-center bg-neutral-850 hover:bg-neutral-750 hover:text-white text-neutral-350 hover:scale-[1.005] active:scale-[0.995] text-sm font-bold py-3 px-6 rounded-lg border border-neutral-700/80 transition-all cursor-pointer shadow-lg text-center select-none"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Download Compressed GZ File (.xml.gz)
-                  </button>
-                )}
+                <a
+                  href={`/api/generate-sitemap/download?jobId=${activeJobId}&format=gzip`}
+                  download="sitemap.xml.gz"
+                  className="flex-1 inline-flex items-center justify-center bg-neutral-850 hover:bg-neutral-750 hover:text-white text-neutral-350 hover:scale-[1.005] active:scale-[0.995] text-sm font-bold py-3 px-6 rounded-lg border border-neutral-700/80 transition-all cursor-pointer shadow-lg text-center select-none"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Compressed GZ File (.xml.gz)
+                </a>
               </div>
             </div>
           )}
