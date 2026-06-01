@@ -791,10 +791,16 @@ export default function Docs() {
                 <p>
                   This sitemap generator intelligently crawls websites to
                   discover all accessible pages and generates a
-                  standards-compliant XML sitemap. It&apos;s designed to handle
+                  standards-compliant XML sitemap. It is designed to handle
                   both traditional server-side rendered (SSR) pages and modern
                   client-side rendered (CSR) applications like React, Vue, and
                   Angular.
+                </p>
+                <p>
+                  It utilizes an asynchronous task processing architecture powered by BullMQ
+                  and Redis. Crawl requests are placed into a queue on submission and
+                  processed by a dedicated sitemap background worker. This handles long-running crawls
+                  without blocking the web server and streams progress updates using Server-Sent Events (SSE).
                 </p>
                 <p>
                   The generator uses a hybrid approach: it first attempts to
@@ -1506,22 +1512,23 @@ export default function Docs() {
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
                   <h3 className="text-sm font-semibold text-neutral-100 flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-450" />
-                    Concurrent Request Worker Pool
+                    Asynchronous Redis Queue & Worker Pool
                   </h3>
                   <p className="text-sm text-neutral-300 leading-relaxed ">
-                    Sets a thread cap limit (5 by default) to balance scrape
-                    speed, executing index actions asynchronously without
-                    head-of-line blocking.
+                    Dispatches crawl tasks to a background worker queue (BullMQ & Redis), 
+                    using a concurrency cap of 5 page crawl threads to crawl sites efficiently 
+                    without blocking the Next.js API server event loop.
                   </p>
                 </div>
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
                   <h3 className="text-sm font-semibold text-neutral-100 flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-450" />
-                    Shared Browser Context
+                    Recyclable Browser Pooling
                   </h3>
                   <p className="text-sm text-neutral-300 leading-relaxed ">
-                    Keeps the Chrome window active globally, spinning child tabs
-                    dynamically to avoid page container spin-up latencies.
+                    Maintains Chromium instances through an asynchronous manager that automatically 
+                    recycles the browser after 50 page loads, force-killing old processes to prevent 
+                    Windows Control Flow Guard (CFG) crashes and resource/handle leaks.
                   </p>
                 </div>
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">

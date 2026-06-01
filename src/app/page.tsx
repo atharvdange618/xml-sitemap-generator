@@ -813,6 +813,21 @@ export default function Home() {
                         </p>
                       </div>
                     </div>
+
+                    <div className="flex items-start gap-3">
+                      <div className="p-1.5 rounded bg-blue-950/20 border border-blue-500/15 text-blue-400 shrink-0 mt-0.5">
+                        <Layers size={13} />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-neutral-300">
+                          Asynchronous Redis Queue & Stability
+                        </h4>
+                        <p className="text-sm text-neutral-400 mt-0.5 leading-snug">
+                          Crawls run via BullMQ workers with automatic Chromium recycling 
+                          and SIGKILL cleanups to mitigate leaks and CFG crashes.
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="pt-3 border-t border-neutral-900 text-center">
@@ -905,7 +920,7 @@ export default function Home() {
       </main>
 
       <section className="max-w-5xl mx-auto px-4 py-16 border-t border-neutral-900">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
           <div className="space-y-2.5">
             <div className="flex items-center gap-2 font-semibold text-white text-sm">
               <Cpu size={16} className="text-emerald-400" />
@@ -921,12 +936,23 @@ export default function Home() {
           <div className="space-y-2.5">
             <div className="flex items-center gap-2 font-semibold text-white text-sm">
               <ShieldAlert size={16} className="text-emerald-400" />
-              <span>Robots.txt Directive Compliance</span>
+              <span>Robots.txt Compliance</span>
             </div>
             <p className="text-sm text-neutral-400 leading-relaxed">
               Maintains strict crawl safety rules. Auto-discovers indexing
               sitemaps and bypasses disallow routes to crawl websites
-              respectfully.
+              respectfully based on RFC 9309 standards.
+            </p>
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-2 font-semibold text-white text-sm">
+              <Layers size={16} className="text-emerald-400" />
+              <span>Queue & Worker Engine</span>
+            </div>
+            <p className="text-sm text-neutral-400 leading-relaxed">
+              Decouples crawling execution from the main API thread. Uses BullMQ 
+              and Redis to queue and process long-running jobs reliably with stability guarantees.
             </p>
           </div>
 

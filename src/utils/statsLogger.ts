@@ -143,7 +143,7 @@ export class SitemapStats {
 ║   • Overlap (already in sitemap): ${String(this.overlapPages).padEnd(27)} ║
 ║                                                                ║
 ║ ══════════════════════════════════════════════════════════════ ║
-║ 📄 FINAL GENERATED SITEMAP: ${String(this.finalSitemapTotal).padEnd(33)} ║
+║   FINAL GENERATED SITEMAP: ${String(this.finalSitemapTotal).padEnd(34)} ║
 ║ ══════════════════════════════════════════════════════════════ ║
 ║                                                                ║
 ║ CRAWL DEPTH:                                                   ║
@@ -170,7 +170,7 @@ export class SitemapStats {
         filepath,
         JSON.stringify(this.toJSON(), null, 2),
       );
-      console.log(`\n✅ Stats saved to: ${filepath}`);
+      console.log(`\nStats saved to: ${filepath}`);
 
       const latestPath = path.join(LOGS_DIR, "latest.json");
       await fs.promises.writeFile(
