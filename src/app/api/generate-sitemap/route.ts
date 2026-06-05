@@ -4,7 +4,7 @@ import { validateCrawlUrl } from "@/utils/sitemap/urlUtils";
 
 export const dynamic = "force-dynamic";
 
-const MAX_PAGES_HARD_LIMIT = 500;
+const MAX_PAGES_HARD_LIMIT = 1000;
 const MAX_QUEUE_WAITING = 10;
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const parsedMax = Math.min(
       Math.max(1, parseInt(maxPages || "100", 10) || 100),
-      MAX_PAGES_HARD_LIMIT
+      MAX_PAGES_HARD_LIMIT,
     );
 
     const queue = getSitemapQueue();
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (waitingCount >= MAX_QUEUE_WAITING) {
       return NextResponse.json(
         { error: "Queue is full, please try again later" },
-        { status: 503 }
+        { status: 503 },
       );
     }
 
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     console.error("Error queueing sitemap job:", error);
     return NextResponse.json(
       { error: "Failed to queue sitemap job: " + error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
