@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "worker": "node --no-maglev node_modules/tsx/dist/cli.mjs src/workers/sitemapWorker.ts"
   },
   "dependencies": {

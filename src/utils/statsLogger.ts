@@ -73,6 +73,7 @@ export class SitemapStats {
   }
 
   addError(url: string, errorMessage: string): void {
+    if (this.errors.length >= 500) return;
     this.errors.push({
       url,
       error: errorMessage,

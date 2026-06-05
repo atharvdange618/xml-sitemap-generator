@@ -2,10 +2,12 @@ import { Worker, Job } from "bullmq";
 import { getRedisConnection } from "../utils/sitemap/redis";
 import { createSitemap } from "../utils/sitemapGenerator";
 import { SitemapJobData } from "../utils/sitemap/queue";
-import { createCrawlCaches } from "../utils/sitemap/cache";
 import fs from "fs";
 import path from "path";
 import zlib from "zlib";
+import { promisify } from "util";
+
+const gzipAsync = promisify(zlib.gzip);
 
 const SITEMAPS_DIR = path.join(process.cwd(), ".logs", "sitemaps");
 
@@ -14,6 +16,8 @@ if (!fs.existsSync(SITEMAPS_DIR)) {
 }
 
 console.log("Sitemap Background Worker Initializing...");
+
+const JOB_TIMEOUT_MS = 10 * 60 * 1000;
 
 const worker = new Worker(
   "sitemap-queue",
@@ -34,14 +38,40 @@ const worker = new Worker(
     };
 
     try {
-      const caches = createCrawlCaches();
-      const { sitemap, stats } = await createSitemap(url, maxPages, onProgress, caches);
-      const gzipSitemapBuffer = zlib.gzipSync(Buffer.from(sitemap));
+      const result = await Promise.race([
+        createSitemap(url, maxPages, onProgress),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `Job timed out after ${JOB_TIMEOUT_MS / 60000} minutes`,
+                ),
+              ),
+            JOB_TIMEOUT_MS,
+          ),
+        ),
+      ]);
 
+      const { sitemap, chunks, stats } = result;
       const jobDir = path.join(SITEMAPS_DIR, jobId);
       fs.mkdirSync(jobDir, { recursive: true });
+
       fs.writeFileSync(path.join(jobDir, "sitemap.xml"), sitemap, "utf-8");
+      const gzipSitemapBuffer = await gzipAsync(Buffer.from(sitemap));
       fs.writeFileSync(path.join(jobDir, "sitemap.xml.gz"), gzipSitemapBuffer);
+
+      if (chunks && chunks.length > 0) {
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkName = `sitemap-${i + 1}.xml`;
+          fs.writeFileSync(path.join(jobDir, chunkName), chunks[i], "utf-8");
+          const gzipChunk = await gzipAsync(Buffer.from(chunks[i]));
+          fs.writeFileSync(path.join(jobDir, `${chunkName}.gz`), gzipChunk);
+        }
+        console.log(
+          `[Job ${jobId}] Wrote ${chunks.length} split sitemap chunk files`,
+        );
+      }
 
       console.log(
         `[Job ${jobId}] Crawl completed. Discovered ${stats.statistics.crawling.pagesDiscovered} pages. Saved files to ${jobDir}`,
