@@ -62,6 +62,7 @@ export async function GET(request: NextRequest): Promise<Response> {
           }
 
           if (state === "completed") {
+            if (timerId) { clearTimeout(timerId); timerId = null; }
             const result = currentJob.returnvalue;
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({ type: "done", stats: result?.stats })}\n\n`)
@@ -72,6 +73,7 @@ export async function GET(request: NextRequest): Promise<Response> {
           }
 
           if (state === "failed") {
+            if (timerId) { clearTimeout(timerId); timerId = null; }
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({
@@ -85,9 +87,13 @@ export async function GET(request: NextRequest): Promise<Response> {
             return;
           }
 
-          timerId = setTimeout(checkJob, 500);
+          timerId = setTimeout(checkJob, 2000);
         } catch (error: any) {
           console.error("Error checking job progress in SSE:", error);
+          if (timerId) {
+            clearTimeout(timerId);
+            timerId = null;
+          }
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`)
           );

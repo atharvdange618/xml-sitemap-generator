@@ -8,6 +8,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { searchParams } = new URL(request.url);
   const jobId = searchParams.get("jobId");
   const format = searchParams.get("format") || "xml";
+  const chunk = searchParams.get("chunk");
 
   if (!jobId) {
     return new Response(JSON.stringify({ error: "jobId is required" }), {
@@ -29,7 +30,11 @@ export async function GET(request: NextRequest): Promise<Response> {
     ".logs",
     "sitemaps",
     jobId,
-    filename,
+    chunk && /^\d+$/.test(chunk)
+      ? format === "gzip"
+        ? `sitemap-${chunk}.xml.gz`
+        : `sitemap-${chunk}.xml`
+      : filename,
   );
 
   if (!fs.existsSync(filePath)) {
