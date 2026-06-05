@@ -2,13 +2,7 @@ import puppeteer, { Browser, Page } from "puppeteer";
 import { parse, HTMLElement } from "node-html-parser";
 import { SitemapStats } from "../statsLogger";
 import { config, CrawlerConfig } from "./config";
-import {
-  CrawlCaches,
-  createCrawlCaches,
-  setCrawlCache,
-  saveCache,
-  loadCache,
-} from "./cache";
+import { CrawlCaches, createCrawlCaches, setCrawlCache } from "./cache";
 import { isValidImageUrl, normalizeUrl, isValidUrl } from "./urlUtils";
 import { fetchWithRetry } from "./httpClient";
 import {
@@ -29,7 +23,8 @@ class RecyclableBrowser {
   private currentBrowser: Browser | null = null;
   private currentBrowserPagesOpened = 0;
   private activePagesPerBrowser = new Map<Browser, number>();
-  private maxPages = 50; // Recycle after 50 pages to release memory leaks
+  private recycleScheduled = false;
+  private maxPages = 50;
 
   async init() {
     if (!this.currentBrowser) {
@@ -40,35 +35,35 @@ class RecyclableBrowser {
           "--no-sandbox",
           "--disable-setuid-sandbox",
           "--disable-dev-shm-usage",
-          "--disable-gpu", // Turn off GPU for stability and to prevent crashes on Windows
+          "--disable-gpu",
         ],
       });
       this.currentBrowserPagesOpened = 0;
+      this.recycleScheduled = false;
       this.activePagesPerBrowser.set(this.currentBrowser, 0);
     }
   }
 
   async newPage(): Promise<Page> {
     await this.init();
-    
+
     const browserToUse = this.currentBrowser!;
     const page = await browserToUse.newPage();
-    
-    // Page successfully created, track metrics
+
     this.currentBrowserPagesOpened++;
     const currentActive = this.activePagesPerBrowser.get(browserToUse) || 0;
     this.activePagesPerBrowser.set(browserToUse, currentActive + 1);
 
-    // If the browser has reached threshold, mark it for replacement.
-    // The next newPage() request will get a brand new browser instance.
-    if (this.currentBrowserPagesOpened >= this.maxPages) {
+    if (
+      !this.recycleScheduled &&
+      this.currentBrowserPagesOpened >= this.maxPages
+    ) {
       console.log(
-        `[RecyclableBrowser] Marking browser instance for recycling (Pages opened: ${this.currentBrowserPagesOpened})`
+        `[RecyclableBrowser] Scheduling browser recycle after ${this.currentBrowserPagesOpened} pages`,
       );
-      this.currentBrowser = null;
+      this.recycleScheduled = true;
     }
 
-    // Wrap page.close to decrement active count for this specific browser
     const realClose = page.close.bind(page);
     let closed = false;
     page.close = async () => {
@@ -77,13 +72,22 @@ class RecyclableBrowser {
         const active = this.activePagesPerBrowser.get(browserToUse) || 0;
         const newActive = Math.max(0, active - 1);
         this.activePagesPerBrowser.set(browserToUse, newActive);
-        
-        // If there are no more active pages for this browser and it has been recycled, close it!
-        if (newActive === 0 && browserToUse !== this.currentBrowser) {
+
+        if (
+          newActive === 0 &&
+          this.recycleScheduled &&
+          browserToUse === this.currentBrowser
+        ) {
+          console.log(
+            "[RecyclableBrowser] Recycling browser now that all pages are closed",
+          );
+          this.currentBrowser = null;
+          this.recycleScheduled = false;
           this.activePagesPerBrowser.delete(browserToUse);
-          browserToUse.close()
+          await browserToUse
+            .close()
             .catch((e: any) =>
-              console.error("Error closing recycled browser:", e.message)
+              console.error("Error closing recycled browser:", e.message),
             )
             .finally(() => {
               try {
@@ -99,22 +103,19 @@ class RecyclableBrowser {
   }
 
   async close() {
-    if (this.currentBrowser) {
-      const browser = this.currentBrowser;
+    const browser = this.currentBrowser;
+    this.currentBrowser = null;
+    this.recycleScheduled = false;
+    if (browser) {
       this.activePagesPerBrowser.delete(browser);
-      this.currentBrowser = null;
-      await browser.close().catch(() => {}).finally(() => {
-        try {
-          browser.process()?.kill("SIGKILL");
-        } catch {}
-      });
-    }
-    for (const browser of this.activePagesPerBrowser.keys()) {
-      await browser.close().catch(() => {}).finally(() => {
-        try {
-          browser.process()?.kill("SIGKILL");
-        } catch {}
-      });
+      await browser
+        .close()
+        .catch(() => {})
+        .finally(() => {
+          try {
+            browser.process()?.kill("SIGKILL");
+          } catch {}
+        });
     }
     this.activePagesPerBrowser.clear();
   }
@@ -263,69 +264,110 @@ export async function crawlSite(
     });
 
   const next = () => {
-    while (queue.length > 0) {
-      const item = queue.shift();
+    if (queue.length > 0) {
+      const item = queue[0];
       if (item && sitemapData.size + activeCount < maxPages) {
-        return item;
+        return queue.shift()!;
       }
     }
     return null;
   };
 
   const processOne = async ({ url, depth }: { url: string; depth: number }) => {
-    if (onProgress) {
-      onProgress(url, sitemapData.size + 1);
-    }
+    const canonicalChain = new Set<string>();
+    canonicalChain.add(normalizeUrl(url, baseUrl));
+    let currentUrl = url;
+    let currentDepth = depth;
 
-    const {
-      links,
-      lastmod,
-      alternates,
-      canonical,
-      isIndexable: pageIndexable,
-      images,
-    } = await crawlUrl(url, baseUrl, cfg, getBrowser, caches);
+    while (true) {
+      const result = await crawlUrl(
+        currentUrl,
+        baseUrl,
+        cfg,
+        getBrowser,
+        caches,
+      );
+      const {
+        links,
+        lastmod,
+        alternates,
+        canonical,
+        isIndexable: pageIndexable,
+        images,
+      } = result;
 
-    if (sitemapData.size < maxPages) {
-      const priority = calculatePriority(depth);
-
-      if (pageIndexable) {
-        sitemapData.set(url, { lastmod, priority, alternates, images });
-        if (stats) {
-          stats.incrementCrawledPages();
-          stats.updateDepthInfo(depth);
-        }
-      }
-
-      // Check if canonical URL is different and should be queued
       const normalizedCanonical = canonical
         ? normalizeUrl(canonical, baseUrl)
         : null;
-      const normalizedCurrent = normalizeUrl(url, baseUrl);
-      const linksToQueue = [...links];
+      const normalizedCurrent = normalizeUrl(currentUrl, baseUrl);
 
-      if (normalizedCanonical && normalizedCanonical !== normalizedCurrent) {
-        const canonicalUrlObj = new URL(normalizedCanonical);
-        const baseUrlObj = new URL(baseUrl);
-        if (canonicalUrlObj.hostname === baseUrlObj.hostname) {
-          linksToQueue.push(normalizedCanonical);
-        }
-      }
-
-      const maxDepth = cfg.maxDepth || 10;
-      if (depth < maxDepth) {
-        for (const link of linksToQueue) {
+      let followTarget: string | null = null;
+      if (!pageIndexable) {
+        if (links.length === 1 && links[0] !== normalizedCurrent) {
           try {
-            const path = new URL(link).pathname;
-            const isAllowed = isPathAllowed(path, robotsRules);
-
-            if (!visited.has(link) && isAllowed) {
-              visited.add(link);
-              queue.push({ url: link, depth: depth + 1 });
+            const target = new URL(links[0]);
+            const base = new URL(baseUrl);
+            if (target.hostname === base.hostname) {
+              followTarget = links[0];
+            }
+          } catch {}
+        }
+        if (
+          !followTarget &&
+          normalizedCanonical &&
+          normalizedCanonical !== normalizedCurrent
+        ) {
+          try {
+            const canonicalObj = new URL(normalizedCanonical);
+            const baseObj = new URL(baseUrl);
+            if (canonicalObj.hostname === baseObj.hostname) {
+              followTarget = normalizedCanonical;
             }
           } catch {}
         }
       }
+
+      if (followTarget && !canonicalChain.has(followTarget)) {
+        canonicalChain.add(followTarget);
+        currentUrl = followTarget;
+        continue;
+      }
+
+      if (sitemapData.size < maxPages) {
+        const priority = calculatePriority(currentDepth);
+
+        if (pageIndexable) {
+          sitemapData.set(currentUrl, {
+            lastmod,
+            priority,
+            alternates,
+            images,
+          });
+          if (onProgress) {
+            onProgress(currentUrl, Math.min(sitemapData.size, maxPages));
+          }
+          if (stats) {
+            stats.incrementCrawledPages();
+            stats.updateDepthInfo(currentDepth);
+          }
+        }
+
+        const maxDepth = cfg.maxDepth || 10;
+        if (currentDepth < maxDepth) {
+          for (const link of links) {
+            try {
+              const path = new URL(link).pathname;
+              const isAllowed = isPathAllowed(path, robotsRules);
+              if (!visited.has(link) && isAllowed) {
+                visited.add(link);
+                queue.push({ url: link, depth: currentDepth + 1 });
+              }
+            } catch {}
+          }
+        }
+      }
+
+      break;
     }
   };
 
@@ -393,19 +435,17 @@ export async function crawlUrl(
     try {
       httpData = await getLinksWithHTTP(baseUrl, currentUrl, cfg, caches);
     } catch {
-      // Increment failure count; only lock to browser after 3 consecutive failures (P0.5)
       const failures = (caches.renderCache.get(`${origin}:failures`) || 0) + 1;
       caches.renderCache.set(`${origin}:failures`, failures);
       if (failures >= 3) {
         console.log(
-          `[crawlUrl] Origin ${origin} locked to browser after ${failures} consecutive HTTP failures`
+          `[crawlUrl] Origin ${origin} locked to browser after ${failures} consecutive HTTP failures`,
         );
         caches.renderCache.set(origin, "browser");
       }
     }
   }
 
-  // Handle HTTP redirect target
   if (httpData && httpData.redirectTarget) {
     try {
       const redirectTargetUrl = new URL(httpData.redirectTarget);
@@ -431,7 +471,6 @@ export async function crawlUrl(
     };
   }
 
-  // If HTTP succeeded and it was not indexable, respect that decision (e.g. noindex)
   if (httpData && !httpData.isIndexable) {
     return {
       links: [],
@@ -443,7 +482,6 @@ export async function crawlUrl(
     };
   }
 
-  // If HTTP succeeded, is not CSR, and returned links, we are good to go (fast path)
   if (httpData && !httpData.isCSR && httpData.links.length > 0) {
     const normalizedCanonical = httpData.canonical
       ? normalizeUrl(httpData.canonical, baseUrl)
@@ -481,7 +519,6 @@ export async function crawlUrl(
       currentUrl,
     );
 
-    // Handle Puppeteer redirect target
     if (puppeteerData.redirectTarget) {
       try {
         const redirectTargetUrl = new URL(puppeteerData.redirectTarget);
@@ -522,7 +559,6 @@ export async function crawlUrl(
         ]),
       ].filter(isValidImageUrl);
 
-      // Deduplicate alternates
       const altMap = new Map();
       for (const alt of finalAlternates) {
         altMap.set(alt.hreflang, alt);
@@ -635,7 +671,6 @@ export async function getLinksWithHTTP(
     };
   }
 
-  // Gate on status 200 OK
   if (response.status !== 200) {
     const result = {
       links: [],
@@ -646,7 +681,6 @@ export async function getLinksWithHTTP(
       isIndexable: false,
       images: [],
     };
-    // Cache the failure as well to avoid re-requests
     setCrawlCache(caches, currentUrl, {
       lastmodHeader: response.headers["last-modified"] || null,
       etag: response.headers["etag"] || null,
@@ -656,10 +690,10 @@ export async function getLinksWithHTTP(
   }
 
   const contentType = (response.headers["content-type"] as string) || "";
-  if (
-    contentType.includes("application/json") ||
-    !contentType.includes("text/html")
-  ) {
+  const isHtml =
+    contentType.includes("text/html") ||
+    contentType.includes("application/xhtml+xml");
+  if (contentType.includes("application/json") || !isHtml) {
     const result = {
       links: [],
       isCSR: false,
@@ -684,7 +718,6 @@ export async function getLinksWithHTTP(
 
   const root = parse(html);
 
-  // Check last-modified
   const lastmodHeader = response.headers["last-modified"] as string;
   let lastmod = null;
   if (lastmodHeader) {
@@ -694,7 +727,6 @@ export async function getLinksWithHTTP(
     }
   }
 
-  // Gating indexability
   const pageIndexable = isIndexable(response.headers as any, root);
   if (!pageIndexable) {
     const result = {
@@ -720,7 +752,6 @@ export async function getLinksWithHTTP(
     currentUrl,
   );
 
-  // Gating canonical mismatch
   const normalizedCanonical = canonical
     ? normalizeUrl(canonical, baseUrl)
     : null;
@@ -754,7 +785,6 @@ export async function getLinksWithHTTP(
     images: isCSR ? [] : images,
   };
 
-  // Cache the successful HTTP results
   setCrawlCache(caches, currentUrl, {
     lastmodHeader: response.headers["last-modified"] || null,
     etag: response.headers["etag"] || null,
@@ -779,7 +809,6 @@ export async function getLinksWithPuppeteer(
   const page = await browser.newPage();
 
   try {
-    // Intercept and block unnecessary media requests to save time
     await page.setRequestInterception(true);
     page.on("request", (req) => {
       const type = req.resourceType();
@@ -809,7 +838,6 @@ export async function getLinksWithPuppeteer(
       };
     }
 
-    // Check header indexability
     const headers = response?.headers() || {};
     const xRobots = headers["x-robots-tag"];
     if (xRobots && /noindex/i.test(xRobots)) {
@@ -822,7 +850,6 @@ export async function getLinksWithPuppeteer(
       };
     }
 
-    // Wait Strategy (race between body content density or selector markers)
     await Promise.race([
       page.waitForFunction(
         () =>
@@ -838,7 +865,6 @@ export async function getLinksWithPuppeteer(
       // Best-effort wait fallback
     });
 
-    // Check meta noindex
     const metaNoIndex = await page.evaluate(() => {
       const meta = document.querySelector('meta[name="robots" i]');
       return !!(meta && /noindex/i.test(meta.getAttribute("content") || ""));
@@ -859,10 +885,13 @@ export async function getLinksWithPuppeteer(
       const alternates: { hreflang: string; href: string }[] = [];
       let canonical: string | null = null;
 
-      // Piercing Shadow DOM to find all anchors
       function findAllAnchors(
         rootNode: Document | ShadowRoot = document,
+        depth = 0,
       ): HTMLAnchorElement[] {
+        const MAX_SHADOW_DEPTH = 10;
+        if (depth > MAX_SHADOW_DEPTH) return [];
+
         const anchors = Array.from(
           rootNode.querySelectorAll("a[href]"),
         ) as HTMLAnchorElement[];
@@ -870,12 +899,11 @@ export async function getLinksWithPuppeteer(
           .map((el) => el.shadowRoot)
           .filter(Boolean) as ShadowRoot[];
         for (const sr of shadowRoots) {
-          anchors.push(...findAllAnchors(sr));
+          anchors.push(...findAllAnchors(sr, depth + 1));
         }
         return anchors;
       }
 
-      // Extract anchors
       const linkElements = findAllAnchors();
       for (const element of linkElements) {
         try {
@@ -915,7 +943,6 @@ export async function getLinksWithPuppeteer(
         } catch {}
       }
 
-      // Extract alternates and canonical
       const linkTags = document.querySelectorAll(
         'link[rel="canonical"], link[rel="alternate"]',
       );
@@ -967,7 +994,6 @@ export async function getLinksWithPuppeteer(
         } catch {}
       }
 
-      // Extract images
       const images: string[] = [];
       const imgElements = document.querySelectorAll("img[src]");
       for (const imgEl of Array.from(imgElements)) {
@@ -1072,6 +1098,11 @@ export function extractLinks(
 
     try {
       const normalized = normalizeUrl(src, currentUrl);
+      try {
+        new URL(normalized);
+      } catch {
+        continue;
+      }
       if (isValidImageUrl(normalized)) {
         images.push(normalized);
       }
@@ -1124,9 +1155,7 @@ export async function processSitemapUrls(
   };
 
   const processOne = async (url: string) => {
-    if (onProgress) {
-      onProgress(url, sitemapData.size + 1);
-    }
+    if (sitemapData.size >= maxPages) return;
 
     const {
       lastmod,
@@ -1145,6 +1174,9 @@ export async function processSitemapUrls(
           ? images.map((img) => (typeof img === "string" ? { loc: img } : img))
           : [],
       });
+      if (onProgress) {
+        onProgress(url, Math.min(sitemapData.size, maxPages));
+      }
     }
   };
 
@@ -1215,13 +1247,19 @@ export async function getUrlMetadata(
         };
       }
       if (response.status === 200) {
-        root = parse(response.data || "");
-        pageIndexable = isIndexable(response.headers as any, root);
-        httpSuccess = true;
+        const ct = (response.headers["content-type"] as string) || "";
+        const isPageHtml =
+          ct.includes("text/html") || ct.includes("application/xhtml+xml");
+        if (!ct.includes("application/json") && isPageHtml) {
+          root = parse(response.data || "");
+          pageIndexable = isIndexable(response.headers as any, root);
+          httpSuccess = true;
+        }
       }
     } catch {
       if (caches) {
-        const failures = (caches.renderCache.get(`${origin}:failures`) || 0) + 1;
+        const failures =
+          (caches.renderCache.get(`${origin}:failures`) || 0) + 1;
         caches.renderCache.set(`${origin}:failures`, failures);
         if (failures >= 3) {
           caches.renderCache.set(origin, "browser");
@@ -1260,6 +1298,11 @@ export async function getUrlMetadata(
       if (src) {
         try {
           const normalizedSrc = normalizeUrl(src, url);
+          try {
+            new URL(normalizedSrc);
+          } catch {
+            continue;
+          }
           if (isValidImageUrl(normalizedSrc)) {
             images.push(normalizedSrc);
           }
@@ -1282,7 +1325,6 @@ export async function getUrlMetadata(
     return result;
   }
 
-  // Fallback to Puppeteer
   if (getBrowser) {
     try {
       const browser = await getBrowser();
@@ -1320,7 +1362,6 @@ export async function getUrlMetadata(
           return { lastmod: null, isIndexable: false, images: [] };
         }
 
-        // Gating canonical redirects
         const canonical = await page.evaluate(() => {
           const link = document.querySelector('link[rel="canonical"]');
           return link ? link.getAttribute("href") : null;
@@ -1374,12 +1415,12 @@ export async function createSitemap(
   websiteUrl: string,
   maxPages = 100,
   onProgress?: (url: string, count: number) => void,
-  caches?: CrawlCaches,
 ): Promise<{
   sitemap: string;
   stats: any;
+  chunks?: string[];
 }> {
-  const jobCaches = caches || createCrawlCaches(loadCache());
+  const jobCaches = createCrawlCaches();
   const stats = new SitemapStats(websiteUrl);
   const baseUrl = new URL(websiteUrl).origin;
 
@@ -1391,51 +1432,58 @@ export async function createSitemap(
     return puppeteerBrowser as any as Browser;
   };
 
+  let lastEmitted = 0;
+  const throttledProgress = (url: string, count: number) => {
+    if (!onProgress) return;
+    const now = Date.now();
+    const isMilestone =
+      url.startsWith("Sitemap:") ||
+      url.startsWith("Crawling") ||
+      url.startsWith("Merging") ||
+      url.startsWith("Complete!");
+    if (isMilestone || now - lastEmitted >= 500 || count >= maxPages) {
+      lastEmitted = now;
+      onProgress(url, count);
+    }
+  };
+
   try {
     let robotsRules: RobotsRulesCompiled = { disallowed: [], allowed: [] };
     try {
-      robotsRules = await fetchRobotsTxtRules(baseUrl, getBrowser);
+      robotsRules = await fetchRobotsTxtRules(baseUrl);
     } catch (e: any) {
       console.error("Error setting up robots.txt rules:", e.message);
     }
 
     stats.setRobotsTxtInfo(robotsRules.disallowed.map((r) => r.pattern));
 
-    const sitemapUrlsList = await discoverSitemap(baseUrl, getBrowser);
+    const sitemapUrlsList = await discoverSitemap(baseUrl);
     let sitemapUrls: string[] = [];
 
     if (sitemapUrlsList && sitemapUrlsList.length > 0) {
       const parsedResults = await Promise.all(
-        sitemapUrlsList.map((url) =>
-          fetchAndParseSitemap(url, getBrowser).catch(() => []),
-        ),
+        sitemapUrlsList.map((url) => fetchAndParseSitemap(url).catch(() => [])),
       );
       sitemapUrls = Array.from(new Set(parsedResults.flat()));
       stats.setSitemapPages(sitemapUrls.length);
 
-      if (onProgress) {
-        onProgress(
-          `Sitemap: ${sitemapUrls.length} URLs | Starting crawl for more...`,
-          0,
-        );
-      }
-    }
-
-    if (onProgress) {
-      onProgress(
-        `Crawling from homepage to find more pages...`,
-        sitemapUrls.length,
+      throttledProgress(
+        `Sitemap: ${sitemapUrls.length} URLs | Starting crawl for more...`,
+        0,
       );
     }
+
+    throttledProgress(
+      `Crawling from homepage to find more pages...`,
+      sitemapUrls.length,
+    );
 
     const crawledData = await crawlSite(
       baseUrl,
       maxPages,
       config,
       (url, count) => {
-        if (onProgress) {
-          onProgress(url, sitemapUrls.length + count);
-        }
+        throttledProgress(url, Math.min(sitemapUrls.length + count, maxPages));
       },
       robotsRules,
       stats,
@@ -1448,12 +1496,10 @@ export async function createSitemap(
       ...Array.from(crawledData.keys()),
     ]);
 
-    if (onProgress) {
-      onProgress(
-        `Merging results: ${allUrls.size} unique URLs found`,
-        allUrls.size,
-      );
-    }
+    throttledProgress(
+      `Merging results: ${allUrls.size} unique URLs found`,
+      allUrls.size,
+    );
 
     const finalData = new Map<string, SitemapItem>(crawledData);
     const uncrawledUrls = sitemapUrls.filter((url) => !finalData.has(url));
@@ -1466,9 +1512,7 @@ export async function createSitemap(
         remainingSlots,
         config,
         (url, count) => {
-          if (onProgress) {
-            onProgress(url, finalData.size + count);
-          }
+          throttledProgress(url, Math.min(finalData.size + count, maxPages));
         },
         robotsRules,
         getBrowser,
@@ -1493,24 +1537,24 @@ export async function createSitemap(
     stats.setPageBreakdown(sitemapOnlyPages, crawledOnlyPages, overlapPages);
     stats.setTotalPages(finalData.size);
 
-    if (onProgress) {
-      onProgress(`Complete! ${finalData.size} pages processed`, finalData.size);
-    }
+    throttledProgress(
+      `Complete! ${finalData.size} pages processed`,
+      finalData.size,
+    );
 
     await stats.save();
-    saveCache(jobCaches.crawlCache);
     console.log(stats.getSummary());
 
+    const { xml, chunks } = generateSitemap(finalData, baseUrl);
     return {
-      sitemap: generateSitemap(finalData),
+      sitemap: xml,
+      chunks,
       stats: stats.toJSON(),
     };
   } catch (error: any) {
     console.error("Critical error during createSitemap:", error.message);
     try {
-      // Persist partial stats collected on error
       await stats.save();
-      saveCache(jobCaches.crawlCache);
     } catch (saveError: any) {
       console.error("Could not save partial stats:", saveError.message);
     }
