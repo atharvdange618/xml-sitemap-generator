@@ -16,6 +16,13 @@ export async function GET(request: NextRequest): Promise<Response> {
     });
   }
 
+  if (!/^[a-zA-Z0-9_-]+$/.test(jobId)) {
+    return new Response(JSON.stringify({ error: "Invalid jobId" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const filename = format === "gzip" ? "sitemap.xml.gz" : "sitemap.xml";
   const filePath = path.join(
     process.cwd(),

@@ -1,17 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addSitemapJob } from "@/utils/sitemap/queue";
+import { addSitemapJob, getSitemapQueue } from "@/utils/sitemap/queue";
+import { validateCrawlUrl } from "@/utils/sitemap/urlUtils";
 
 export const dynamic = "force-dynamic";
 
+const MAX_PAGES_HARD_LIMIT = 500;
+const MAX_QUEUE_WAITING = 10;
+
 export async function POST(request: NextRequest): Promise<Response> {
   try {
-    const { url, maxPages } = await request.json();
+    let { url, maxPages } = await request.json();
 
-    if (!url) {
-      return NextResponse.json({ error: "URL is required" }, { status: 400 });
+    const validation = validateCrawlUrl(url);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.reason }, { status: 400 });
+    }
+    url = validation.normalized;
+
+    const parsedMax = Math.min(
+      Math.max(1, parseInt(maxPages || "100", 10) || 100),
+      MAX_PAGES_HARD_LIMIT
+    );
+
+    const queue = getSitemapQueue();
+    const waitingCount = await queue.getWaitingCount();
+    if (waitingCount >= MAX_QUEUE_WAITING) {
+      return NextResponse.json(
+        { error: "Queue is full, please try again later" },
+        { status: 503 }
+      );
     }
 
-    const job = await addSitemapJob(url, parseInt(maxPages || "100", 10) || 100);
+    const job = await addSitemapJob(url, parsedMax);
 
     return NextResponse.json({ success: true, jobId: job.id });
   } catch (error: any) {
