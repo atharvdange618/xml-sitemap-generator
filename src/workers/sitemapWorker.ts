@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import { getRedisConnection } from "../utils/sitemap/redis";
 import { createSitemap } from "../utils/sitemapGenerator";
 import { SitemapJobData } from "../utils/sitemap/queue";
+import { createCrawlCaches } from "../utils/sitemap/cache";
 import fs from "fs";
 import path from "path";
 import zlib from "zlib";
@@ -33,7 +34,8 @@ const worker = new Worker(
     };
 
     try {
-      const { sitemap, stats } = await createSitemap(url, maxPages, onProgress);
+      const caches = createCrawlCaches();
+      const { sitemap, stats } = await createSitemap(url, maxPages, onProgress, caches);
       const gzipSitemapBuffer = zlib.gzipSync(Buffer.from(sitemap));
 
       const jobDir = path.join(SITEMAPS_DIR, jobId);

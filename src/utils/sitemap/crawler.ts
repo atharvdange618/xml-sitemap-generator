@@ -2,7 +2,13 @@ import puppeteer, { Browser, Page } from "puppeteer";
 import { parse, HTMLElement } from "node-html-parser";
 import { SitemapStats } from "../statsLogger";
 import { config, CrawlerConfig } from "./config";
-import { renderCache, crawlCache, initCrawlCache, saveCache } from "./cache";
+import {
+  CrawlCaches,
+  createCrawlCaches,
+  setCrawlCache,
+  saveCache,
+  loadCache,
+} from "./cache";
 import { isValidImageUrl, normalizeUrl, isValidUrl } from "./urlUtils";
 import { fetchWithRetry } from "./httpClient";
 import {
@@ -207,6 +213,7 @@ export function shouldRender(
   currentUrl: string,
   html: string,
   root: HTMLElement,
+  renderCache: Map<string, any>,
 ): boolean {
   try {
     const origin = new URL(currentUrl).origin;
@@ -237,6 +244,7 @@ export async function crawlSite(
   robotsRules: RobotsRulesCompiled = { disallowed: [], allowed: [] },
   stats: SitemapStats | null = null,
   getBrowserArg: (() => Promise<Browser>) | null = null,
+  caches: CrawlCaches = createCrawlCaches(),
 ): Promise<Map<string, SitemapItem>> {
   const sitemapData = new Map<string, SitemapItem>();
   const normalizedBase = normalizeUrl(baseUrl, baseUrl);
@@ -276,7 +284,7 @@ export async function crawlSite(
       canonical,
       isIndexable: pageIndexable,
       images,
-    } = await crawlUrl(url, baseUrl, cfg, getBrowser);
+    } = await crawlUrl(url, baseUrl, cfg, getBrowser, caches);
 
     if (sitemapData.size < maxPages) {
       const priority = calculatePriority(depth);
@@ -365,6 +373,7 @@ export async function crawlUrl(
   baseUrl: string,
   cfg: CrawlerConfig,
   getBrowser: () => Promise<Browser>,
+  caches: CrawlCaches,
 ): Promise<{
   links: string[];
   lastmod: string | null;
@@ -377,15 +386,22 @@ export async function crawlUrl(
   let httpData: any = null;
 
   const origin = new URL(currentUrl).origin;
-  const cachedDecision = renderCache.get(origin);
+  const cachedDecision = caches.renderCache.get(origin);
   const runHttp = cachedDecision !== "browser";
 
   if (runHttp) {
     try {
-      httpData = await getLinksWithHTTP(baseUrl, currentUrl, cfg);
+      httpData = await getLinksWithHTTP(baseUrl, currentUrl, cfg, caches);
     } catch {
-      // Lock origin to Browser rendering to avoid wasting time on subsequent URLs
-      renderCache.set(origin, "browser");
+      // Increment failure count; only lock to browser after 3 consecutive failures (P0.5)
+      const failures = (caches.renderCache.get(`${origin}:failures`) || 0) + 1;
+      caches.renderCache.set(`${origin}:failures`, failures);
+      if (failures >= 3) {
+        console.log(
+          `[crawlUrl] Origin ${origin} locked to browser after ${failures} consecutive HTTP failures`
+        );
+        caches.renderCache.set(origin, "browser");
+      }
     }
   }
 
@@ -565,6 +581,7 @@ export async function getLinksWithHTTP(
   baseUrl: string,
   currentUrl: string,
   cfg: CrawlerConfig,
+  caches: CrawlCaches,
 ): Promise<{
   links: string[];
   isCSR: boolean;
@@ -575,7 +592,7 @@ export async function getLinksWithHTTP(
   images: string[];
   redirectTarget?: string;
 }> {
-  const cached = crawlCache[currentUrl];
+  const cached = caches.crawlCache[currentUrl];
   const headers: Record<string, string> = {};
   if (cached) {
     if (cached.lastmodHeader) {
@@ -630,11 +647,11 @@ export async function getLinksWithHTTP(
       images: [],
     };
     // Cache the failure as well to avoid re-requests
-    crawlCache[currentUrl] = {
+    setCrawlCache(caches, currentUrl, {
       lastmodHeader: response.headers["last-modified"] || null,
       etag: response.headers["etag"] || null,
       ...result,
-    };
+    });
     return result;
   }
 
@@ -652,11 +669,11 @@ export async function getLinksWithHTTP(
       isIndexable: false,
       images: [],
     };
-    crawlCache[currentUrl] = {
+    setCrawlCache(caches, currentUrl, {
       lastmodHeader: response.headers["last-modified"] || null,
       etag: response.headers["etag"] || null,
       ...result,
-    };
+    });
     return result;
   }
 
@@ -689,11 +706,11 @@ export async function getLinksWithHTTP(
       isIndexable: false,
       images: [],
     };
-    crawlCache[currentUrl] = {
+    setCrawlCache(caches, currentUrl, {
       lastmodHeader: response.headers["last-modified"] || null,
       etag: response.headers["etag"] || null,
       ...result,
-    };
+    });
     return result;
   }
 
@@ -717,15 +734,15 @@ export async function getLinksWithHTTP(
       isIndexable: false,
       images,
     };
-    crawlCache[currentUrl] = {
+    setCrawlCache(caches, currentUrl, {
       lastmodHeader: response.headers["last-modified"] || null,
       etag: response.headers["etag"] || null,
       ...result,
-    };
+    });
     return result;
   }
 
-  const isCSR = shouldRender(currentUrl, html, root);
+  const isCSR = shouldRender(currentUrl, html, root, caches.renderCache);
 
   const result = {
     links: isCSR ? [] : links,
@@ -738,11 +755,11 @@ export async function getLinksWithHTTP(
   };
 
   // Cache the successful HTTP results
-  crawlCache[currentUrl] = {
+  setCrawlCache(caches, currentUrl, {
     lastmodHeader: response.headers["last-modified"] || null,
     etag: response.headers["etag"] || null,
     ...result,
-  };
+  });
 
   return result;
 }
@@ -1077,6 +1094,7 @@ export async function processSitemapUrls(
   onProgress?: (url: string, count: number) => void,
   robotsRules: RobotsRulesCompiled = { disallowed: [], allowed: [] },
   getBrowser?: () => Promise<Browser>,
+  caches?: CrawlCaches,
 ): Promise<Map<string, SitemapItem>> {
   const sitemapData = new Map<string, SitemapItem>();
   const urlsToProcess = urls
@@ -1114,7 +1132,7 @@ export async function processSitemapUrls(
       lastmod,
       isIndexable: pageIndexable,
       images,
-    } = await getUrlMetadata(url, getBrowser);
+    } = await getUrlMetadata(url, getBrowser, caches);
 
     if (pageIndexable && sitemapData.size < maxPages) {
       const depth = new URL(url).pathname.split("/").filter(Boolean).length;
@@ -1160,12 +1178,13 @@ export async function processSitemapUrls(
 export async function getUrlMetadata(
   url: string,
   getBrowser?: () => Promise<Browser>,
+  caches?: CrawlCaches,
 ): Promise<{
   lastmod: string | null;
   isIndexable: boolean;
   images: string[];
 }> {
-  const cached = crawlCache[url];
+  const cached = caches ? caches.crawlCache[url] : undefined;
   const headers: Record<string, string> = {};
   if (cached) {
     if (cached.lastmodHeader) {
@@ -1182,7 +1201,7 @@ export async function getUrlMetadata(
   let pageIndexable = false;
 
   const origin = new URL(url).origin;
-  const cachedDecision = renderCache.get(origin);
+  const cachedDecision = caches ? caches.renderCache.get(origin) : undefined;
   const runHttp = cachedDecision !== "browser";
 
   if (runHttp) {
@@ -1201,18 +1220,26 @@ export async function getUrlMetadata(
         httpSuccess = true;
       }
     } catch {
-      renderCache.set(origin, "browser");
+      if (caches) {
+        const failures = (caches.renderCache.get(`${origin}:failures`) || 0) + 1;
+        caches.renderCache.set(`${origin}:failures`, failures);
+        if (failures >= 3) {
+          caches.renderCache.set(origin, "browser");
+        }
+      }
     }
   }
 
   if (httpSuccess && response && root) {
     if (!pageIndexable) {
       const result = { lastmod: null, isIndexable: false, images: [] };
-      crawlCache[url] = {
-        lastmodHeader: response.headers["last-modified"] || null,
-        etag: response.headers["etag"] || null,
-        ...result,
-      };
+      if (caches) {
+        setCrawlCache(caches, url, {
+          lastmodHeader: response.headers["last-modified"] || null,
+          etag: response.headers["etag"] || null,
+          ...result,
+        });
+      }
       return result;
     }
 
@@ -1245,11 +1272,13 @@ export async function getUrlMetadata(
       isIndexable: true,
       images: Array.from(new Set(images)),
     };
-    crawlCache[url] = {
-      lastmodHeader: response.headers["last-modified"] || null,
-      etag: response.headers["etag"] || null,
-      ...result,
-    };
+    if (caches) {
+      setCrawlCache(caches, url, {
+        lastmodHeader: response.headers["last-modified"] || null,
+        etag: response.headers["etag"] || null,
+        ...result,
+      });
+    }
     return result;
   }
 
@@ -1345,12 +1374,12 @@ export async function createSitemap(
   websiteUrl: string,
   maxPages = 100,
   onProgress?: (url: string, count: number) => void,
+  caches?: CrawlCaches,
 ): Promise<{
   sitemap: string;
   stats: any;
 }> {
-  renderCache.clear(); // Clear the render cache to start each crawl run fresh
-  initCrawlCache(); // Load cached requests and initialize the object
+  const jobCaches = caches || createCrawlCaches(loadCache());
   const stats = new SitemapStats(websiteUrl);
   const baseUrl = new URL(websiteUrl).origin;
 
@@ -1411,6 +1440,7 @@ export async function createSitemap(
       robotsRules,
       stats,
       getBrowser,
+      jobCaches,
     );
 
     const allUrls = new Set([
@@ -1442,6 +1472,7 @@ export async function createSitemap(
         },
         robotsRules,
         getBrowser,
+        jobCaches,
       );
 
       for (const [url, data] of additionalData.entries()) {
@@ -1467,7 +1498,7 @@ export async function createSitemap(
     }
 
     await stats.save();
-    saveCache(crawlCache);
+    saveCache(jobCaches.crawlCache);
     console.log(stats.getSummary());
 
     return {
@@ -1479,7 +1510,7 @@ export async function createSitemap(
     try {
       // Persist partial stats collected on error
       await stats.save();
-      saveCache(crawlCache);
+      saveCache(jobCaches.crawlCache);
     } catch (saveError: any) {
       console.error("Could not save partial stats:", saveError.message);
     }

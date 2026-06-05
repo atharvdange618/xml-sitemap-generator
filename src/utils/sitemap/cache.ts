@@ -2,9 +2,22 @@ import fs from "fs";
 import path from "path";
 
 const CACHE_FILE = path.join(process.cwd(), ".logs", "crawl_cache.json");
+const CRAWL_CACHE_MAX_SIZE = 2000;
 
-export const renderCache = new Map<string, any>(); // origin -> 'http' | 'browser' | 'unknown' | samples array
-export const crawlCache: Record<string, any> = {};
+export interface CrawlCaches {
+  renderCache: Map<string, any>;
+  crawlCache: Record<string, any>;
+}
+
+/**
+ * Create fresh per-job caches. Prevents cross-job state pollution (P0.4).
+ */
+export function createCrawlCaches(preload?: Record<string, any>): CrawlCaches {
+  return {
+    renderCache: new Map<string, any>(),
+    crawlCache: preload ? { ...preload } : {},
+  };
+}
 
 export function loadCache(): Record<string, any> {
   try {
@@ -29,10 +42,23 @@ export function saveCache(cache: Record<string, any>): void {
   }
 }
 
-export function initCrawlCache(): void {
-  const loaded = loadCache();
-  for (const key of Object.keys(crawlCache)) {
-    delete crawlCache[key];
+/**
+ * Set a crawl cache entry with a size cap. When the cap is reached,
+ * oldest entries are evicted using FIFO (Object key order).
+ */
+export function setCrawlCache(
+  caches: CrawlCaches,
+  key: string,
+  value: any,
+  maxSize = CRAWL_CACHE_MAX_SIZE,
+): void {
+  const cache = caches.crawlCache;
+  const keys = Object.keys(cache);
+  if (keys.length >= maxSize) {
+    const toRemove = Math.ceil(maxSize * 0.2);
+    for (let i = 0; i < toRemove && i < keys.length; i++) {
+      delete cache[keys[i]];
+    }
   }
-  Object.assign(crawlCache, loaded);
+  cache[key] = value;
 }
