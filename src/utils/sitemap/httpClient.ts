@@ -47,11 +47,7 @@ export async function fetchUrlWithPuppeteer(
       waitUntil: "domcontentloaded",
       timeout: 15000,
     });
-    const text = await page.evaluate(async () => {
-      const res = await fetch(window.location.href);
-      return res.text();
-    });
-    return text;
+    return await page.content();
   } finally {
     try {
       await page.close();

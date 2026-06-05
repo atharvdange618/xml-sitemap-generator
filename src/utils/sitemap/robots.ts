@@ -1,5 +1,4 @@
-import { http, fetchUrlWithPuppeteer } from "./httpClient";
-import { Browser } from "puppeteer";
+import { http } from "./httpClient";
 
 export interface CompiledRule {
   pattern: string;
@@ -11,7 +10,10 @@ export interface RobotsRulesCompiled {
   allowed: CompiledRule[];
 }
 
-export function parseRobotsTxt(content: string, userAgent = "XmlSitemapGenerator"): RobotsRulesCompiled {
+export function parseRobotsTxt(
+  content: string,
+  userAgent = "XmlSitemapGenerator",
+): RobotsRulesCompiled {
   const rules: RobotsRulesCompiled = {
     disallowed: [],
     allowed: [],
@@ -20,8 +22,14 @@ export function parseRobotsTxt(content: string, userAgent = "XmlSitemapGenerator
   const lines = content.split(/\r?\n/);
 
   function compilePattern(pattern: string): RegExp {
-    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-    const regexStr = "^" + escaped.replace(/\*/g, ".*");
+    let hasEndAnchor = false;
+    let working = pattern;
+    if (working.endsWith("$")) {
+      hasEndAnchor = true;
+      working = working.slice(0, -1);
+    }
+    const escaped = working.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    const regexStr = "^" + escaped.replace(/\*/g, ".*") + (hasEndAnchor ? "$" : "");
     return new RegExp(regexStr);
   }
 
@@ -42,7 +50,7 @@ export function parseRobotsTxt(content: string, userAgent = "XmlSitemapGenerator
         (agent) =>
           agent === "*" ||
           agent === userAgent.toLowerCase() ||
-          userAgent.toLowerCase().includes(agent),
+          userAgent.toLowerCase().startsWith(agent),
       );
       if (matchesUs && value) {
         const compiled = { pattern: value, regex: compilePattern(value) };
@@ -58,7 +66,10 @@ export function parseRobotsTxt(content: string, userAgent = "XmlSitemapGenerator
   return rules;
 }
 
-export function isPathAllowed(path: string, rules: RobotsRulesCompiled): boolean {
+export function isPathAllowed(
+  path: string,
+  rules: RobotsRulesCompiled,
+): boolean {
   let matchingDisallow: CompiledRule | null = null;
   let matchingAllow: CompiledRule | null = null;
 
@@ -84,7 +95,6 @@ export function isPathAllowed(path: string, rules: RobotsRulesCompiled): boolean
     }
   }
 
-  // RFC 9309 rules: longest match wins. If match lengths are equal, allow wins.
   if (matchingDisallow && matchingAllow) {
     if (matchingAllow.pattern.length >= matchingDisallow.pattern.length) {
       return true;
@@ -98,7 +108,6 @@ export function isPathAllowed(path: string, rules: RobotsRulesCompiled): boolean
 
 export async function fetchRobotsTxtRules(
   baseUrl: string,
-  getBrowser?: () => Promise<Browser>
 ): Promise<RobotsRulesCompiled> {
   const robotsUrl = `${baseUrl}/robots.txt`;
   let robotsContent = "";
@@ -106,15 +115,7 @@ export async function fetchRobotsTxtRules(
     const response = await http.get(robotsUrl);
     robotsContent = response.data;
   } catch (error: any) {
-    if (getBrowser) {
-      console.warn(
-        `HTTP failed to fetch robots.txt (${error.message}). Attempting Puppeteer fallback.`,
-      );
-      robotsContent = await fetchUrlWithPuppeteer(
-        robotsUrl,
-        getBrowser,
-      ).catch(() => "");
-    }
+    console.warn(`HTTP failed to fetch robots.txt (${error.message}).`);
   }
   return parseRobotsTxt(robotsContent);
 }

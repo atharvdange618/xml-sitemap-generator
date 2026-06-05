@@ -1,39 +1,20 @@
-import {
-  http,
-  fetchWithRetry,
-  fetchUrlWithPuppeteer,
-  checkUrlWithPuppeteer,
-} from "./httpClient";
+import { http, fetchWithRetry } from "./httpClient";
 import { isValidUrl, escapeXml } from "./urlUtils";
-import { Browser } from "puppeteer";
 import { SitemapItem } from "../../types/sitemap";
 
 export async function fetchAndParseSitemap(
   sitemapUrl: string,
-  getBrowser?: () => Promise<Browser>
 ): Promise<string[]> {
   try {
-    let xml: string | null = null;
-    try {
-      const response = await fetchWithRetry(sitemapUrl);
-      xml = response.data;
-    } catch (error: any) {
-      if (getBrowser) {
-        console.warn(
-          `HTTP failed to fetch sitemap from ${sitemapUrl} (${error.message}). Attempting Puppeteer fallback.`,
-        );
-        xml = await fetchUrlWithPuppeteer(sitemapUrl, getBrowser);
-      } else {
-        throw error;
-      }
-    }
+    const response = await fetchWithRetry(sitemapUrl);
+    const xml = response.data;
 
     if (typeof xml !== "string") {
       return [];
     }
 
     if (xml.includes("<sitemapindex")) {
-      return await parseSitemapIndex(xml, getBrowser);
+      return await parseSitemapIndex(xml);
     }
 
     return parseSitemap(xml);
@@ -60,10 +41,7 @@ export function parseSitemap(xml: string): string[] {
   return urls;
 }
 
-export async function parseSitemapIndex(
-  xml: string,
-  getBrowser?: () => Promise<Browser>
-): Promise<string[]> {
+export async function parseSitemapIndex(xml: string): Promise<string[]> {
   const sitemapUrls: string[] = [];
   const locMatches = xml.match(/<loc>(.*?)<\/loc>/g) || [];
 
@@ -78,24 +56,23 @@ export async function parseSitemapIndex(
   }
 
   const allUrls: string[] = [];
-  // Fetch sub-sitemaps in parallel with Promise.all
-  const results = await Promise.all(
-    sitemapUrls.map((sitemapUrl) =>
-      fetchAndParseSitemap(sitemapUrl, getBrowser).catch(() => []),
-    ),
-  );
-
-  for (const urls of results) {
-    allUrls.push(...urls);
+  const concurrency = 5;
+  for (let i = 0; i < sitemapUrls.length; i += concurrency) {
+    const batch = sitemapUrls.slice(i, i + concurrency);
+    const batchResults = await Promise.all(
+      batch.map((sitemapUrl) =>
+        fetchAndParseSitemap(sitemapUrl).catch(() => []),
+      ),
+    );
+    for (const urls of batchResults) {
+      allUrls.push(...urls);
+    }
   }
 
   return allUrls;
 }
 
-export async function discoverSitemap(
-  baseUrl: string,
-  getBrowser?: () => Promise<Browser>
-): Promise<string[]> {
+export async function discoverSitemap(baseUrl: string): Promise<string[]> {
   const commonPaths = [
     "/sitemap.xml",
     "/sitemap_index.xml",
@@ -105,28 +82,20 @@ export async function discoverSitemap(
   ];
 
   try {
-    let robotsContent = "";
-    try {
-      const robotsResponse = await http.get(`${baseUrl}/robots.txt`);
-      robotsContent = robotsResponse.data;
-    } catch (error: any) {
-      if (getBrowser) {
-        console.warn(
-          `HTTP failed to fetch robots.txt (${error.message}). Attempting Puppeteer fallback.`,
-        );
-        robotsContent = await fetchUrlWithPuppeteer(
-          `${baseUrl}/robots.txt`,
-          getBrowser,
-        ).catch(() => "");
-      }
-    }
+    const robotsResponse = await http.get(`${baseUrl}/robots.txt`);
+    const robotsContent = robotsResponse.data;
 
     const sitemapMatches =
       robotsContent.match(/Sitemap:\s*(https?:\/\/[^\s]+)/gi) || [];
 
     for (const match of sitemapMatches) {
       const sitemapUrl = match.replace(/Sitemap:\s*/i, "").trim();
-      commonPaths.unshift(new URL(sitemapUrl, baseUrl).pathname);
+      try {
+        const parsed = new URL(sitemapUrl, baseUrl);
+        commonPaths.unshift(parsed.href);
+      } catch {
+        commonPaths.unshift(new URL(sitemapUrl, baseUrl).pathname);
+      }
     }
   } catch (error) {
     // robots.txt not found or error, continue with common paths
@@ -135,25 +104,13 @@ export async function discoverSitemap(
   const uniquePaths = [...new Set(commonPaths)];
   const activeSitemaps: string[] = [];
 
-  for (const path of uniquePaths) {
+  for (const candidate of uniquePaths) {
     try {
-      const sitemapUrl = `${baseUrl}${path}`;
-      let status = 0;
-      try {
-        const response = await http.get(sitemapUrl, { timeout: 5000 });
-        status = response.status;
-      } catch (error) {
-        if (getBrowser) {
-          const exists = await checkUrlWithPuppeteer(
-            sitemapUrl,
-            getBrowser,
-          ).catch(() => false);
-          if (exists) {
-            status = 200;
-          }
-        }
-      }
-      if (status === 200) {
+      const sitemapUrl = candidate.startsWith("http")
+        ? candidate
+        : `${baseUrl}${candidate}`;
+      const response = await http.get(sitemapUrl, { timeout: 5000 });
+      if (response.status === 200) {
         activeSitemaps.push(sitemapUrl);
       }
     } catch (error) {
@@ -161,70 +118,95 @@ export async function discoverSitemap(
     }
   }
 
-  // Prioritize sitemap indexes if multiple sitemaps are found
   const indexSitemap = activeSitemaps.find((url) => url.includes("index"));
   if (indexSitemap) return [indexSitemap];
 
   return activeSitemaps;
 }
 
-export function generateSitemap(sitemapData: Map<string, SitemapItem>): string {
-  const entries = Array.from(sitemapData.entries());
-
-  // Enforce 50,000 URL limits by chunking to a index sitemap if exceeded
-  if (entries.length > 50000) {
-    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
-    xml +=
-      '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
-
-    const chunksCount = Math.ceil(entries.length / 50000);
-    for (let i = 0; i < chunksCount; i++) {
-      xml += "  <sitemap>\n";
-      xml += `    <loc>sitemap-${i + 1}.xml</loc>\n`;
-      xml += `    <lastmod>${new Date().toISOString()}</lastmod>\n`;
-      xml += "  </sitemap>\n";
-    }
-    xml += "</sitemapindex>";
-    return xml;
-  }
-
-  // Single XML output with hreflang alternate namespaces and Google images
-  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
-  xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n';
-  xml += '        xmlns:xhtml="http://www.w3.org/1999/xhtml"\n';
-  xml +=
-    '        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n';
+function buildUrlset(entries: [string, SitemapItem][]): string {
+  const parts: string[] = [];
+  parts.push('<?xml version="1.0" encoding="UTF-8"?>\n');
+  parts.push('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n');
+  parts.push('        xmlns:xhtml="http://www.w3.org/1999/xhtml"\n');
+  parts.push(
+    '        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n',
+  );
 
   for (const [url, { lastmod, priority, alternates, images }] of entries) {
-    xml += "  <url>\n";
-    xml += `    <loc>${escapeXml(url)}</loc>\n`;
+    parts.push("  <url>\n");
+    parts.push(`    <loc>${escapeXml(url)}</loc>\n`);
     if (lastmod) {
       try {
-        xml += `    <lastmod>${new Date(lastmod).toISOString()}</lastmod>\n`;
+        parts.push(
+          `    <lastmod>${new Date(lastmod).toISOString()}</lastmod>\n`,
+        );
       } catch (e) {
         // Skip lastmod if invalid
       }
     }
-    xml += `    <priority>${priority}</priority>\n`;
+    parts.push(`    <priority>${priority}</priority>\n`);
 
     if (alternates && alternates.length > 0) {
       for (const alt of alternates) {
-        xml += `    <xhtml:link rel="alternate" hreflang="${escapeXml(alt.hreflang)}" href="${escapeXml(alt.href)}"/>\n`;
+        parts.push(
+          `    <xhtml:link rel="alternate" hreflang="${escapeXml(alt.hreflang)}" href="${escapeXml(alt.href)}"/>\n`,
+        );
       }
     }
 
     if (images && images.length > 0) {
       const uniqueImages = [...new Set(images)].slice(0, 1000);
       for (const imgUrl of uniqueImages) {
-        xml += "    <image:image>\n";
-        xml += `      <image:loc>${escapeXml(typeof imgUrl === 'string' ? imgUrl : (imgUrl as any).loc)}</image:loc>\n`;
-        xml += "    </image:image>\n";
+        parts.push("    <image:image>\n");
+        parts.push(
+          `      <image:loc>${escapeXml(typeof imgUrl === "string" ? imgUrl : (imgUrl as any).loc)}</image:loc>\n`,
+        );
+        parts.push("    </image:image>\n");
       }
     }
 
-    xml += "  </url>\n";
+    parts.push("  </url>\n");
   }
 
-  xml += "</urlset>";
-  return xml;
+  parts.push("</urlset>");
+  return parts.join("");
+}
+
+export function generateSitemap(
+  sitemapData: Map<string, SitemapItem>,
+  baseUrl?: string,
+): { xml: string; chunks?: string[] } {
+  const entries = Array.from(sitemapData.entries());
+
+  if (entries.length > 50000) {
+    const chunksCount = Math.ceil(entries.length / 50000);
+    const chunks: string[] = [];
+    const base = baseUrl ? baseUrl.replace(/\/$/, "") : "";
+
+    for (let i = 0; i < chunksCount; i++) {
+      const chunkEntries = entries.slice(i * 50000, (i + 1) * 50000);
+      chunks.push(buildUrlset(chunkEntries));
+    }
+
+    const parts: string[] = [];
+    parts.push('<?xml version="1.0" encoding="UTF-8"?>\n');
+    parts.push(
+      '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n',
+    );
+
+    for (let i = 0; i < chunksCount; i++) {
+      const filename = `sitemap-${i + 1}.xml`;
+      const loc = base ? `${base}/${filename}` : filename;
+      parts.push("  <sitemap>\n");
+      parts.push(`    <loc>${escapeXml(loc)}</loc>\n`);
+      parts.push(`    <lastmod>${new Date().toISOString()}</lastmod>\n`);
+      parts.push("  </sitemap>\n");
+    }
+    parts.push("</sitemapindex>");
+
+    return { xml: parts.join(""), chunks };
+  }
+
+  return { xml: buildUrlset(entries) };
 }
