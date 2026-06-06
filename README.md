@@ -16,6 +16,8 @@ Generate comprehensive, SEO-optimized XML sitemaps for your website with real-ti
 - **Real-time Progress Tracking** - Watch your sitemap being built live with Server-Sent Events (SSE) streaming.
 - **Concurrent Processing** - Batch crawling with high-performance concurrency (5 concurrent pages by default).
 - **Smart Link Extraction** - Extracts internal links, canonicals, and alternate links while avoiding non-HTML resources.
+- **Google Image Schema Support** - Automatically parses images from standard DOM and shadow DOM, compiling them into a Google-compliant XML image sitemap.
+- **Sitemap Splitting & Pagination** - Automatically splits large sitemaps (> 50,000 URLs) into a sitemap index and smaller XML chunk files.
 
 ### Ethical & Compliant
 
