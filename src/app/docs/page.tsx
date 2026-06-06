@@ -157,107 +157,80 @@ const ALGORITHM_STEPS = [
 
 const CSR_TEMPLATES = [
   {
-    name: "React SPA (Client-Side Rendered)",
+    name: "React SPA (CSR)",
     html: `<!DOCTYPE html>
 <html>
-<head>
-  <meta charset="utf-8" />
-  <script src="/static/js/main.d435cb.js"></script>
-</head>
-<body>
-  <div id="root"></div>
-</body>
+<head><meta charset="utf-8" /><script src="/static/js/main.js"></script></head>
+<body><div id="root"></div></body>
 </html>`,
     stats: {
-      length: 145,
-      childCount: 1,
-      hasRoot: true,
-      scriptCount: 1,
-      hasLoadingText: false,
-      isCSR: true,
+      score: 7,
+      hasHydration: false,
+      hasNoscript: false,
+      visibleTextLen: 0,
+      hasFrameworkRoot: true,
+      rootIsEmpty: true,
+      hasSplashScreen: false,
     },
     reason:
-      "HTML is very short (145 chars < 200), contains only 1 child node inside <body>, and matches the framework root element `#root`.",
+      "No hydration data. Empty #root (0 visible chars, +3). Root+empty = +4. Total 7 >= 3 => CSR.",
   },
   {
     name: "Next.js SSR App",
     html: `<!DOCTYPE html>
 <html>
-<head>
-  <title>Corporate Home</title>
-  <link rel="stylesheet" href="/_next/static/css/styles.css" />
-</head>
+<head><title>Corporate Home</title></head>
 <body>
-  <div id="__next">
-    <header>
-      <nav><a href="/about">About</a><a href="/pricing">Pricing</a></nav>
-    </nav>
-    <main>
-      <h1>Optimized Enterprise Performance</h1>
-      <p>We deliver state of the art solutions tailored to your company needs.</p>
-    </main>
-    <footer>© 2026 Enterprise Inc.</footer>
-  </div>
-</body>
-</html>`,
+  <div id="__next"><header><nav><a href="/about">About</a></nav></header><main><h1>Enterprise</h1></main></div>
+  <script id="__NEXT_DATA__" type="application/json">{"page":"/"}</script>
+</body></html>`,
     stats: {
-      length: 440,
-      childCount: 7,
-      hasRoot: true,
-      scriptCount: 0,
-      hasLoadingText: false,
-      isCSR: false,
+      score: 0,
+      hasHydration: true,
+      hasNoscript: false,
+      visibleTextLen: 40,
+      hasFrameworkRoot: true,
+      rootIsEmpty: false,
+      hasSplashScreen: false,
     },
     reason:
-      "Although framework elements (#__next) exist, the HTML content is long (440 chars) and contains full server-rendered layout nodes. No JavaScript runtime rendering is required for link parsing.",
+      "__NEXT_DATA__ hydration payload => immediate return false. Server-rendered content is complete.",
   },
   {
-    name: "Static HTML Landing Page",
+    name: "Static HTML Page",
     html: `<!DOCTYPE html>
-<html>
-<head><title>My Portfolio</title></head>
-<body>
-  <h1>Hello world!</h1>
-  <p>I am a developer who loves writing semantic HTML and clean CSS.</p>
-  <ul>
-    <li><a href="/projects">Projects</a></li>
-    <li><a href="/contact">Get in Touch</a></li>
-  </ul>
-</body>
+<html><head><title>Portfolio</title></head>
+<body><h1>Hello!</h1><p>I love HTML.</p><ul><li><a href="/projects">Projects</a></li></ul></body>
 </html>`,
     stats: {
-      length: 270,
-      childCount: 3,
-      hasRoot: false,
-      scriptCount: 0,
-      hasLoadingText: false,
-      isCSR: false,
+      score: 0,
+      hasHydration: false,
+      hasNoscript: false,
+      visibleTextLen: 45,
+      hasFrameworkRoot: false,
+      rootIsEmpty: false,
+      hasSplashScreen: false,
     },
     reason:
-      "Meets all criteria for direct static parsing: HTML length > 200, no client-side framework root selectors, and static markup is ready to be parsed.",
+      "No CSR signals. No hydration, no framework roots, no splash screen. Total 0 => HTTP parser.",
   },
   {
-    name: "Skeleton/Loading Screen SPA",
+    name: "Skeleton SPA (Loading)",
     html: `<!DOCTYPE html>
-<html>
-<body>
-  <div class="app-shell">
-    <div className="spinner">Loading application dashboard...</div>
-  </div>
-  <script src="/vendor.js"></script>
-  <script src="/app.js"></script>
-</body>
+<html><head><noscript>Please enable JavaScript.</noscript></head>
+<body><div class="loading"><div class="spinner">Loading...</div></div><script src="/app.js"></script></body>
 </html>`,
     stats: {
-      length: 220,
-      childCount: 3,
-      hasRoot: false,
-      scriptCount: 2,
-      hasLoadingText: true,
-      isCSR: true,
+      score: 5,
+      hasHydration: false,
+      hasNoscript: true,
+      visibleTextLen: 10,
+      hasFrameworkRoot: false,
+      rootIsEmpty: false,
+      hasSplashScreen: true,
     },
     reason:
-      "Contains loading indicators, scripts are present, and initial body nodes represent purely skeleton templates rather than actual site content.",
+      "Noscript JS-required => true. Visible <200 (+3). Splash screen (+2). Total 5 >= 3 => CSR.",
   },
 ];
 
@@ -319,27 +292,30 @@ export default function Docs() {
   const [configConcurrency, setConfigConcurrency] = useState(5);
   const [configMaxPages, setConfigMaxPages] = useState(100);
   const [configMinLen, setConfigMinLen] = useState(200);
-  const [configWaitUntil, setConfigWaitUntil] = useState("networkidle2");
-  const configTimeout = 10000;
+  const [configWaitUntil, setConfigWaitUntil] = useState("domcontentloaded");
+  const configTimeout = 8000;
 
-  const customConfigString = `const config = {
+  const customConfigString = `export const config = {
   csr: {
-    minimalContentLength: ${configMinLen},     // Min HTML length for CSR check
-    minimalChildNodes: 5,           // Min body children for CSR check
-    scriptCountThreshold: 10,       // Script tag threshold
-    contentScriptRatio: 1000,       // Content/script ratio
-    rootSelectors: ["#root", "#__next"]
+    minimalContentLength: ${configMinLen},
+    minimalChildNodes: 5,
+    scriptCountThreshold: 10,
+    contentScriptRatio: 1000,
+    rootSelectors: ["#root", "#__next", "#app", "#__nuxt", "[ng-version]"]
   },
   puppeteer: {
     waitForSelectorsTimeout: ${configTimeout}, // Wait for page elements (ms)
-    gotoTimeout: 60000,             // Max page load timeout (ms)
+    gotoTimeout: 15000,             // Max page load timeout (ms)
     waitUntil: "${configWaitUntil}"       // Page idle check strategy
   },
-  crawler: {
-    concurrency: ${configConcurrency},                 // Concurrent page workers
-    maxPages: ${configMaxPages}                   // Hard limit on total URLs
-  }
-}`;
+  logging: {
+    verbose: true
+  },
+  maxDepth: 10,
+  concurrency: ${configConcurrency} // Concurrent page workers
+};
+
+// Note: Crawl page cap limit (${configMaxPages}) is passed as an input parameter to the crawl service.`;
 
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
@@ -585,7 +561,7 @@ export default function Docs() {
         label: "Secondary Pages / Product Categories",
         desc: "Typically index list extensions, detailed categories, or individual blog articles connected directly to primary landing sections.",
       };
-    } else if (d >= 3 && d <= 5) {
+    } else if (d >= 3 && d <= 8) {
       return {
         priority: (1.0 - d * 0.1).toFixed(1),
         label: "Deep Site Content / Single Articles",
@@ -604,6 +580,26 @@ export default function Docs() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200 flex flex-col font-sans selection:bg-emerald-500/20 selection:text-emerald-300 relative">
+      <title>Developer Documentation | XML Sitemap Generator</title>
+      <meta
+        name="description"
+        content="Technical analysis of sitemap crawling mechanics, client-side rendering heuristics, priorities, and configuration options."
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "TechArticle",
+            headline: "XML Sitemap Generator Developer Documentation",
+            description:
+              "Technical analysis of sitemap crawling mechanics, client-side rendering heuristics, priorities, and configuration options.",
+            url: "https://xml-sitemap-generator.vercel.app/docs",
+            inLanguage: "en-US",
+            articleSection: "Developer Docs",
+          }),
+        }}
+      />
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
         <div className="absolute top-[-200px] right-[-200px] w-[500px] h-[500px] rounded-full bg-emerald-500/5 blur-[130px]" />
         <div className="absolute bottom-[200px] left-[-300px] w-[600px] h-[600px] rounded-full bg-emerald-500/3 blur-[150px]" />
@@ -612,9 +608,117 @@ export default function Docs() {
       <header className="sticky top-0 z-40 w-full border-b border-neutral-900 bg-neutral-950/70 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 flex justify-between items-center">
           <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-lg bg-linear-to-tr from-emerald-600 to-lime-600 flex items-center justify-center shadow-lg shadow-emerald-950/30 group-hover:scale-105 transition-all">
-              <Network size={16} className="text-neutral-950" />
-            </div>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 512 512"
+              className="w-8 h-8 group-hover:scale-105 transition-all"
+            >
+              <defs>
+                <linearGradient
+                  id="logoGrad"
+                  x1="0%"
+                  y1="0%"
+                  x2="100%"
+                  y2="100%"
+                >
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="50%" stopColor="#059669" />
+                  <stop offset="100%" stopColor="#84cc16" />
+                </linearGradient>
+                <linearGradient
+                  id="logoLineGrad"
+                  x1="0%"
+                  y1="0%"
+                  x2="0%"
+                  y2="100%"
+                >
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#84cc16" />
+                </linearGradient>
+              </defs>
+              <g fill="none" strokeLinecap="round">
+                <path
+                  d="M 256 110 C 256 185, 160 185, 160 260"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="20"
+                />
+                <path
+                  d="M 256 110 C 256 185, 352 185, 352 260"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="20"
+                />
+                <path
+                  d="M 160 260 C 160 330, 90 330, 90 400"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="16"
+                />
+                <path
+                  d="M 160 260 C 160 330, 230 330, 230 400"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="16"
+                />
+                <path
+                  d="M 352 260 C 352 330, 310 330, 310 400"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="16"
+                />
+                <path
+                  d="M 352 260 C 352 330, 422 330, 422 400"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="16"
+                />
+              </g>
+              <circle
+                cx="90"
+                cy="400"
+                r="28"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="10"
+              />
+              <circle
+                cx="230"
+                cy="400"
+                r="28"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="10"
+              />
+              <circle
+                cx="310"
+                cy="400"
+                r="28"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="10"
+              />
+              <circle
+                cx="422"
+                cy="400"
+                r="28"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="10"
+              />
+              <circle
+                cx="160"
+                cy="260"
+                r="38"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="12"
+              />
+              <circle
+                cx="352"
+                cy="260"
+                r="38"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="12"
+              />
+              <circle cx="256" cy="110" r="50" fill="url(#logoGrad)" />
+              <circle cx="256" cy="110" r="24" fill="#09090b" />
+            </svg>
             <span className="text-lg font-medium text-white tracking-tight group-hover:text-emerald-400 transition-colors">
               Sitemap Generator
             </span>
@@ -791,21 +895,23 @@ export default function Docs() {
                 <p>
                   This sitemap generator intelligently crawls websites to
                   discover all accessible pages and generates a
-                  standards-compliant XML sitemap. It is designed to handle
-                  both traditional server-side rendered (SSR) pages and modern
+                  standards-compliant XML sitemap. It is designed to handle both
+                  traditional server-side rendered (SSR) pages and modern
                   client-side rendered (CSR) applications like React, Vue, and
                   Angular.
                 </p>
                 <p>
-                  It utilizes an asynchronous task processing architecture powered by BullMQ
-                  and Redis. Crawl requests are placed into a queue on submission and
-                  processed by a dedicated sitemap background worker. This handles long-running crawls
-                  without blocking the web server and streams progress updates using Server-Sent Events (SSE).
+                  It utilizes an asynchronous task processing architecture
+                  powered by BullMQ and Redis. Crawl requests are placed into a
+                  queue on submission and processed by a dedicated sitemap
+                  background worker. This handles long-running crawls without
+                  blocking the web server and streams progress updates using
+                  Server-Sent Events (SSE).
                 </p>
                 <p>
                   The generator uses a hybrid approach: it first attempts to
-                  extract links using simple HTTP requests and HTML parsing. If
-                  it detects a CSR application, it automatically falls back to
+                  extract links using fast HTTP fetches and HTML parsing. If it
+                  detects a CSR application, it automatically falls back to
                   Puppeteer for JavaScript rendering.
                 </p>
               </div>
@@ -928,47 +1034,61 @@ export default function Docs() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 my-6">
                   <div className="p-4 bg-neutral-900/40 border border-neutral-800/60 rounded-xl space-y-1.5 hover:border-neutral-800 transition-colors">
                     <span className="text-sm text-emerald-400 font-semibold uppercase tracking-wider">
-                      01. Short HTML
+                      01. Hydration Data
                     </span>
                     <p className="text-sm text-neutral-300 leading-snug">
-                      HTML source length less than 200 characters indicates
-                      minimal initial content.
+                      Detects <code>__NEXT_DATA__</code>, <code>__NUXT__</code>,
+                      or <code>astro-island</code> hydration payloads - a
+                      negative signal that confirms SSR, skipping to HTTP
+                      parsing.
                     </p>
                   </div>
                   <div className="p-4 bg-neutral-900/40 border border-neutral-800/60 rounded-xl space-y-1.5 hover:border-neutral-800 transition-colors">
                     <span className="text-sm text-emerald-400 font-semibold uppercase tracking-wider">
-                      02. Empty Body
+                      02. Noscript Confirmation
                     </span>
                     <p className="text-sm text-neutral-300 leading-snug">
-                      Less than 5 direct child nodes inside the body tag
-                      indicates skeleton layouts.
+                      A <code>&lt;noscript&gt;</code> tag asking users to enable
+                      JavaScript is the strongest positive CSR signal -
+                      immediate Puppeteer fallback.
                     </p>
                   </div>
                   <div className="p-4 bg-neutral-900/40 border border-neutral-800/60 rounded-xl space-y-1.5 hover:border-neutral-800 transition-colors">
                     <span className="text-sm text-emerald-400 font-semibold uppercase tracking-wider">
-                      03. App Markers
+                      03. Visible Text Score
                     </span>
                     <p className="text-sm text-neutral-300 leading-snug">
-                      Presence of React/Next IDs like <code>#root</code> or{" "}
-                      <code>#__next</code>.
+                      Strips script, style, and template tags to measure actual
+                      text. &lt;200 chars = +3 points, &lt;800 chars = +1 point.
                     </p>
                   </div>
                   <div className="p-4 bg-neutral-900/40 border border-neutral-800/60 rounded-xl space-y-1.5 hover:border-neutral-800 transition-colors">
                     <span className="text-sm text-emerald-400 font-semibold uppercase tracking-wider">
-                      04. Script Heavy
+                      04. Framework Roots
                     </span>
                     <p className="text-sm text-neutral-300 leading-snug">
-                      Over 10 script tags coupled with low text-to-code ratio
-                      parameters.
+                      Checks <code>#root</code>, <code>#__next</code>,
+                      <code>#app</code>, <code>#__nuxt</code>, and Angular
+                      markers. Empty root = +4 points, populated = +2.
                     </p>
                   </div>
                   <div className="p-4 bg-neutral-900/40 border border-neutral-800/60 rounded-xl space-y-1.5 hover:border-neutral-800 transition-colors">
                     <span className="text-sm text-emerald-400 font-semibold uppercase tracking-wider">
-                      05. Loading Terms
+                      05. Splash Screen
                     </span>
                     <p className="text-sm text-neutral-300 leading-snug">
-                      Terms like &quot;loading&quot;, &quot;spinner&quot; or
-                      &quot;loading-screen&quot; in the raw source.
+                      Searches for <code>[class*="loading" i]</code> or spinner
+                      selectors. +2 points when body has ≤ 3 children.
+                    </p>
+                  </div>
+                  <div className="p-4 bg-neutral-900/40 border border-neutral-800/60 rounded-xl space-y-1.5 hover:border-neutral-800 transition-colors">
+                    <span className="text-sm text-emerald-400 font-semibold uppercase tracking-wider">
+                      06. Scoring Threshold
+                    </span>
+                    <p className="text-sm text-neutral-300 leading-snug">
+                      A cumulative score <strong>≥ 3</strong> activates the
+                      Puppeteer renderer. Below threshold, HTTP parsing handles
+                      link extraction.
                     </p>
                   </div>
                 </div>
@@ -1023,22 +1143,67 @@ export default function Docs() {
 
                     <div className="mt-4 pt-3 border-t border-neutral-900 space-y-2 font-sans">
                       <div className="flex justify-between items-center text-sm text-neutral-400 font-mono font-semibold">
-                        <span>CRITERIA EVALUATION</span>
-                        <span>CHECK VALUE</span>
+                        <span>SCORING EVALUATION</span>
+                        <span>VERDICT</span>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div className="flex items-center gap-1.5">
                           <div
-                            className={`w-1.5 h-1.5 rounded-full ${selectedTemplate.stats.length < 200 ? "bg-amber-400" : "bg-neutral-700"}`}
+                            className={`w-1.5 h-1.5 rounded-full ${selectedTemplate.stats.hasHydration ? "bg-emerald-500" : "bg-neutral-700"}`}
                           />
                           <span className="text-neutral-300">
-                            Short HTML ({selectedTemplate.stats.length} ch)
+                            Hydration (SSR)
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 justify-end">
-                          {selectedTemplate.stats.length < 200 ? (
+                          {selectedTemplate.stats.hasHydration ? (
+                            <span className="text-emerald-400 font-medium text-sm bg-emerald-500/10 px-1 rounded border border-emerald-500/20">
+                              BYPASS
+                            </span>
+                          ) : (
+                            <span className="text-neutral-400 text-sm">
+                              NONE
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <div
+                            className={`w-1.5 h-1.5 rounded-full ${selectedTemplate.stats.hasNoscript ? "bg-amber-400" : "bg-neutral-700"}`}
+                          />
+                          <span className="text-neutral-300">
+                            Noscript JS-Required
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 justify-end">
+                          {selectedTemplate.stats.hasNoscript ? (
                             <span className="text-amber-400 font-medium text-sm bg-amber-500/10 px-1 rounded border border-amber-500/20">
-                              FLAGGED
+                              CSR
+                            </span>
+                          ) : (
+                            <span className="text-neutral-400 text-sm">
+                              NONE
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <div
+                            className={`w-1.5 h-1.5 rounded-full ${selectedTemplate.stats.visibleTextLen < 200 ? "bg-amber-400" : selectedTemplate.stats.visibleTextLen < 800 ? "bg-yellow-500" : "bg-neutral-700"}`}
+                          />
+                          <span className="text-neutral-300">
+                            Visible Text (
+                            {selectedTemplate.stats.visibleTextLen}c)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 justify-end">
+                          {selectedTemplate.stats.visibleTextLen < 200 ? (
+                            <span className="text-amber-400 font-medium text-sm bg-amber-500/10 px-1 rounded border border-amber-500/20">
+                              +3
+                            </span>
+                          ) : selectedTemplate.stats.visibleTextLen < 800 ? (
+                            <span className="text-yellow-400 font-medium text-sm bg-yellow-500/10 px-1 rounded border border-yellow-500/20">
+                              +1
                             </span>
                           ) : (
                             <span className="text-neutral-400 text-sm">
@@ -1049,71 +1214,75 @@ export default function Docs() {
 
                         <div className="flex items-center gap-1.5">
                           <div
-                            className={`w-1.5 h-1.5 rounded-full ${selectedTemplate.stats.childCount < 5 ? "bg-amber-400" : "bg-neutral-700"}`}
+                            className={`w-1.5 h-1.5 rounded-full ${selectedTemplate.stats.hasFrameworkRoot ? "bg-amber-400" : "bg-neutral-700"}`}
                           />
                           <span className="text-neutral-300">
-                            Empty Body ({selectedTemplate.stats.childCount}{" "}
-                            nodes)
+                            Framework Root{" "}
+                            {selectedTemplate.stats.rootIsEmpty
+                              ? "(empty)"
+                              : "(populated)"}
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 justify-end">
-                          {selectedTemplate.stats.childCount < 5 ? (
+                          {selectedTemplate.stats.hasFrameworkRoot &&
+                          selectedTemplate.stats.rootIsEmpty ? (
                             <span className="text-amber-400 font-medium text-sm bg-amber-500/10 px-1 rounded border border-amber-500/20">
-                              FLAGGED
+                              +4
+                            </span>
+                          ) : selectedTemplate.stats.hasFrameworkRoot ? (
+                            <span className="text-yellow-400 font-medium text-sm bg-yellow-500/10 px-1 rounded border border-yellow-500/20">
+                              +2
                             </span>
                           ) : (
                             <span className="text-neutral-400 text-sm">
-                              PASS
+                              NONE
                             </span>
                           )}
                         </div>
 
                         <div className="flex items-center gap-1.5">
                           <div
-                            className={`w-1.5 h-1.5 rounded-full ${selectedTemplate.stats.hasRoot ? "bg-amber-400" : "bg-neutral-700"}`}
+                            className={`w-1.5 h-1.5 rounded-full ${selectedTemplate.stats.hasSplashScreen ? "bg-amber-400" : "bg-neutral-700"}`}
                           />
                           <span className="text-neutral-300">
-                            Framework Selector (#root/#__next)
+                            Splash Screen
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 justify-end">
-                          {selectedTemplate.stats.hasRoot ? (
+                          {selectedTemplate.stats.hasSplashScreen ? (
                             <span className="text-amber-400 font-medium text-sm bg-amber-500/10 px-1 rounded border border-amber-500/20">
-                              FLAGGED
+                              +2
                             </span>
                           ) : (
                             <span className="text-neutral-400 text-sm">
-                              ABSENT
+                              NONE
                             </span>
                           )}
                         </div>
                       </div>
 
                       <div
-                        className={`mt-3 p-3 rounded-lg border flex flex-col gap-1 transition-all ${
-                          selectedTemplate.stats.isCSR
-                            ? "bg-amber-500/5 border-amber-500/20"
-                            : "bg-emerald-500/5 border-emerald-500/20"
-                        }`}
+                        className={`mt-3 p-3 rounded-lg border flex flex-col gap-1 transition-all ${selectedTemplate.stats.score >= 3 ? "bg-amber-500/5 border-amber-500/20" : "bg-emerald-500/5 border-emerald-500/20"}`}
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-neutral-300 font-semibold tracking-wider uppercase font-mono">
-                            DETERMINED CRAWL ENGINE
+                            FINAL SCORE: {selectedTemplate.stats.score} (&gt;=
+                            3)
                           </span>
-                          {selectedTemplate.stats.isCSR ? (
+                          {selectedTemplate.stats.score >= 3 ? (
                             <span className="text-sm text-amber-400 font-semibold flex items-center gap-1">
                               <Terminal size={12} className="animate-pulse" />{" "}
-                              PUPPETEER FALLBACK
+                              PUPPETEER
                             </span>
                           ) : (
                             <span className="text-sm text-emerald-400 font-semibold flex items-center gap-1">
-                              <Code2 size={12} /> CHEERIO FAST PARSER
+                              <Code2 size={12} /> HTTP PARSER
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-neutral-300 mt-1 leading-normal ">
+                        <p className="text-sm text-neutral-300 mt-1 leading-normal">
                           <strong>Rationale:</strong> {selectedTemplate.reason}
-                        </p>
+                        </p>{" "}
                       </div>
                     </div>
                   </div>
@@ -1140,7 +1309,7 @@ export default function Docs() {
   }
 
   // 2. Strong positive - dev-confirmed CSR
-  if (/<noscript>[^<]*(enable javascript|requires javascript)/i.test(html)) {
+  if (/<noscript>[^<]*(enable javascript|requires javascript|javascript is required|turn on javascript)/i.test(html)) {
     return true;
   }
 
@@ -1229,9 +1398,10 @@ export default function Docs() {
                     </h3>
                   </div>
                   <p className="text-sm text-neutral-300 leading-relaxed ">
-                    Keeps track of visited targets inside a unique `Set`. Query
-                    string parameters and hash fragments are stripped to avoid
-                    crawling redundant loops.
+                    Keeps track of visited targets inside a unique{" "}
+                    <code>Set</code>. Tracking parameters (UTM, fbclid, session
+                    IDs) and hash fragments are stripped, while non-HTML assets
+                    (PDF, ZIP, media) or API routes are filtered out.
                   </p>
                 </div>
 
@@ -1372,8 +1542,9 @@ export default function Docs() {
                     </h3>
                   </div>
                   <p className="text-sm text-neutral-300 leading-relaxed ">
-                    Validates each URL pattern against disallowed paths prior to
-                    executing worker queues.
+                    Supports wildcards, Allow directives, and end-of-line
+                    anchors per RFC 9309. Longest-match semantics determine
+                    final access for each URL path.
                   </p>
                   <div className="bg-neutral-950 border border-neutral-800 p-2.5 rounded font-mono text-sm text-neutral-300 leading-normal">
                     Disallow: /admin/
@@ -1405,7 +1576,7 @@ export default function Docs() {
                   {
                     step: "1",
                     title: "Shared Browser Instance",
-                    desc: "Initiates a singular background headless Chromium container, sharing context resources to mitigate server memory bottlenecks.",
+                    desc: "Launches a shared headless Chromium instance with request interception - images, fonts, media, and stylesheets are blocked, cutting render cost by 60-80%.",
                   },
                   {
                     step: "2",
@@ -1515,9 +1686,10 @@ export default function Docs() {
                     Asynchronous Redis Queue & Worker Pool
                   </h3>
                   <p className="text-sm text-neutral-300 leading-relaxed ">
-                    Dispatches crawl tasks to a background worker queue (BullMQ & Redis), 
-                    using a concurrency cap of 5 page crawl threads to crawl sites efficiently 
-                    without blocking the Next.js API server event loop.
+                    Dispatches crawl tasks to a background worker queue (BullMQ
+                    & Redis), using a concurrency cap of 5 page crawl threads to
+                    crawl sites efficiently without blocking the Next.js API
+                    server event loop.
                   </p>
                 </div>
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
@@ -1526,9 +1698,10 @@ export default function Docs() {
                     Recyclable Browser Pooling
                   </h3>
                   <p className="text-sm text-neutral-300 leading-relaxed ">
-                    Maintains Chromium instances through an asynchronous manager that automatically 
-                    recycles the browser after 50 page loads, force-killing old processes to prevent 
-                    Windows Control Flow Guard (CFG) crashes and resource/handle leaks.
+                    Maintains Chromium instances through an asynchronous manager
+                    that automatically recycles the browser after 50 page loads,
+                    force-killing old processes to prevent Windows Control Flow
+                    Guard (CFG) crashes and resource/handle leaks.
                   </p>
                 </div>
                 <div className="p-5 bg-neutral-900/30 border border-neutral-800 rounded-xl space-y-2 hover:border-neutral-700/60 transition-all shadow-sm">
@@ -1674,8 +1847,8 @@ export default function Docs() {
                         className="w-full h-1 bg-neutral-800 rounded-md appearance-none accent-emerald-500 outline-none"
                       />
                       <p className="text-sm text-neutral-400">
-                        Heuristic scanner flags HTML below this length for
-                        Chromium validation.
+                        CSR detection now uses a cumulative scoring model. See
+                        the criteria cards above for details.
                       </p>
                     </div>
 
@@ -1688,8 +1861,8 @@ export default function Docs() {
                         onChange={(e) => setConfigWaitUntil(e.target.value)}
                         className="w-full bg-neutral-900 border border-neutral-800 text-sm text-neutral-200 rounded p-2 focus:outline-none focus:border-emerald-500"
                       >
-                        <option value="networkidle2">
-                          networkidle2 (Recommended)
+                        <option value="domcontentloaded">
+                          domcontentloaded (Recommended)
                         </option>
                         <option value="networkidle0">
                           networkidle0 (Heavy traffic)
@@ -1721,7 +1894,17 @@ export default function Docs() {
 
       <footer className="border-t border-neutral-900 bg-neutral-950 mt-auto">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-neutral-400 ">
-          <p>Built with Next.js • Open Source Sitemap Generator</p>
+          <p>
+            Built with Next.js by{" "}
+            <a
+              href="https://atharvdangedev.in"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-neutral-200 underline underline-offset-4 decoration-emerald-500/30 font-medium"
+            >
+              Atharv Dange
+            </a>
+          </p>
           <div className="flex gap-4">
             <Link href="/" className="hover:text-neutral-300 transition-colors">
               Generator
@@ -1733,12 +1916,20 @@ export default function Docs() {
               Documentation
             </Link>
             <a
-              href="https://github.com"
+              href="https://github.com/atharvdange618/xml-sitemap-generator"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-neutral-300 transition-colors"
             >
               GitHub
+            </a>
+            <a
+              href="https://x.com/atharvdangedev"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-neutral-300 transition-colors"
+            >
+              X (Twitter)
             </a>
           </div>
           <p>
