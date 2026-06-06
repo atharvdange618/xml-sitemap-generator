@@ -16,7 +16,6 @@ import {
   History,
   ShieldAlert,
   Network,
-  ArrowRight,
   RefreshCw,
   Layers,
   Terminal,
@@ -574,15 +573,149 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col font-sans selection:bg-emerald-500/20 selection:text-emerald-300 relative overflow-hidden">
+      <title>XML Sitemap Generator - Free SEO Sitemap & Image Crawler</title>
+      <meta
+        name="description"
+        content="Generate perfect, SEO-optimized XML sitemaps for any website. Features intelligent CSR/SSR crawling, robots.txt compliance, image schema extraction, and live SSE tracking."
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebApplication",
+            name: "XML Sitemap Generator",
+            url: "https://xml-sitemap-generator.vercel.app",
+            description:
+              "An intelligent XML sitemap generator that crawls websites, supports CSR/SSR rendering, respects robots.txt rules, and outputs SEO-optimized sitemaps.",
+            applicationCategory: "SEO Tool",
+            operatingSystem: "All",
+            browserRequirements: "Requires JavaScript. Requires HTML5.",
+            offers: {
+              "@type": "Offer",
+              price: "0.00",
+              priceCurrency: "USD",
+            },
+          }),
+        }}
+      />
       <div className="absolute top-[-250px] left-[20%] w-[550px] h-[550px] rounded-full bg-emerald-500/5 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[10%] right-[-100px] w-[500px] h-[500px] rounded-full bg-amber-500/3 blur-[140px] pointer-events-none" />
 
       <nav className="sticky top-0 z-40 border-b border-neutral-900 bg-neutral-950/70 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 flex justify-between items-center">
           <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-600 to-lime-600 flex items-center justify-center shadow-lg shadow-emerald-950/30 group-hover:scale-105 transition-all">
-              <Network size={16} className="text-neutral-950" />
-            </div>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 512 512"
+              className="w-8 h-8 group-hover:scale-105 transition-all"
+            >
+              <defs>
+                <linearGradient
+                  id="logoGrad"
+                  x1="0%"
+                  y1="0%"
+                  x2="100%"
+                  y2="100%"
+                >
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="50%" stopColor="#059669" />
+                  <stop offset="100%" stopColor="#84cc16" />
+                </linearGradient>
+                <linearGradient
+                  id="logoLineGrad"
+                  x1="0%"
+                  y1="0%"
+                  x2="0%"
+                  y2="100%"
+                >
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#84cc16" />
+                </linearGradient>
+              </defs>
+              <g fill="none" strokeLinecap="round">
+                <path
+                  d="M 256 110 C 256 185, 160 185, 160 260"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="20"
+                />
+                <path
+                  d="M 256 110 C 256 185, 352 185, 352 260"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="20"
+                />
+                <path
+                  d="M 160 260 C 160 330, 90 330, 90 400"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="16"
+                />
+                <path
+                  d="M 160 260 C 160 330, 230 330, 230 400"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="16"
+                />
+                <path
+                  d="M 352 260 C 352 330, 310 330, 310 400"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="16"
+                />
+                <path
+                  d="M 352 260 C 352 330, 422 330, 422 400"
+                  stroke="url(#logoLineGrad)"
+                  strokeWidth="16"
+                />
+              </g>
+              <circle
+                cx="90"
+                cy="400"
+                r="28"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="10"
+              />
+              <circle
+                cx="230"
+                cy="400"
+                r="28"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="10"
+              />
+              <circle
+                cx="310"
+                cy="400"
+                r="28"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="10"
+              />
+              <circle
+                cx="422"
+                cy="400"
+                r="28"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="10"
+              />
+              <circle
+                cx="160"
+                cy="260"
+                r="38"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="12"
+              />
+              <circle
+                cx="352"
+                cy="260"
+                r="38"
+                fill="#09090b"
+                stroke="url(#logoGrad)"
+                strokeWidth="12"
+              />
+              <circle cx="256" cy="110" r="50" fill="url(#logoGrad)" />
+              <circle cx="256" cy="110" r="24" fill="#09090b" />
+            </svg>
             <span className="text-lg font-medium text-white tracking-tight group-hover:text-emerald-400 transition-colors">
               Sitemap Generator
             </span>
@@ -823,8 +956,9 @@ export default function Home() {
                           Asynchronous Redis Queue & Stability
                         </h4>
                         <p className="text-sm text-neutral-400 mt-0.5 leading-snug">
-                          Crawls run via BullMQ workers with automatic Chromium recycling 
-                          and SIGKILL cleanups to mitigate leaks and CFG crashes.
+                          Crawls run via BullMQ workers with automatic Chromium
+                          recycling and SIGKILL cleanups to mitigate leaks and
+                          CFG crashes.
                         </p>
                       </div>
                     </div>
@@ -951,8 +1085,9 @@ export default function Home() {
               <span>Queue & Worker Engine</span>
             </div>
             <p className="text-sm text-neutral-400 leading-relaxed">
-              Decouples crawling execution from the main API thread. Uses BullMQ 
-              and Redis to queue and process long-running jobs reliably with stability guarantees.
+              Decouples crawling execution from the main API thread. Uses BullMQ
+              and Redis to queue and process long-running jobs reliably with
+              stability guarantees.
             </p>
           </div>
 
@@ -972,7 +1107,17 @@ export default function Home() {
 
       <footer className="border-t border-neutral-900 bg-neutral-950 mt-auto">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-neutral-400">
-          <p>Built with Next.js • Open Source Sitemap Generator</p>
+          <p>
+            Built with Next.js by{" "}
+            <a
+              href="https://atharvdangedev.in"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-neutral-200 underline underline-offset-4 decoration-emerald-500/30 font-medium"
+            >
+              Atharv Dange
+            </a>
+          </p>
           <div className="flex gap-4">
             <Link
               href="/"
@@ -987,12 +1132,20 @@ export default function Home() {
               Documentation
             </Link>
             <a
-              href="https://github.com"
+              href="https://github.com/atharvdange618/xml-sitemap-generator"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-neutral-300 transition-colors"
             >
               GitHub
+            </a>
+            <a
+              href="https://x.com/atharvdangedev"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-neutral-300 transition-colors"
+            >
+              X (Twitter)
             </a>
           </div>
           <p>
