@@ -1475,7 +1475,7 @@ export async function createSitemap(
 
     throttledProgress(
       `Crawling from homepage to find more pages...`,
-      sitemapUrls.length,
+      Math.min(sitemapUrls.length, maxPages),
     );
 
     const crawledData = await crawlSite(
@@ -1498,7 +1498,7 @@ export async function createSitemap(
 
     throttledProgress(
       `Merging results: ${allUrls.size} unique URLs found`,
-      allUrls.size,
+      Math.min(allUrls.size, maxPages),
     );
 
     const finalData = new Map<string, SitemapItem>(crawledData);
