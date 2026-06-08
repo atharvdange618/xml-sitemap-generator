@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: "/",
       disallow: "/api/",
     },
-    sitemap: "https://xml-sitemap-generator.vercel.app/sitemap.xml",
+    sitemap: "https://sitemap.atharvdangedev.in/sitemap.xml",
   };
 }

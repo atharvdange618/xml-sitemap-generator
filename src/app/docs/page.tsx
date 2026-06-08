@@ -594,7 +594,7 @@ export default function Docs() {
             headline: "XML Sitemap Generator Developer Documentation",
             description:
               "Technical analysis of sitemap crawling mechanics, client-side rendering heuristics, priorities, and configuration options.",
-            url: "https://xml-sitemap-generator.vercel.app/docs",
+            url: "https://sitemap.atharvdangedev.in/docs",
             inLanguage: "en-US",
             articleSection: "Developer Docs",
           }),

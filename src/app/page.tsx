@@ -585,7 +585,7 @@ export default function Home() {
             "@context": "https://schema.org",
             "@type": "WebApplication",
             name: "XML Sitemap Generator",
-            url: "https://xml-sitemap-generator.vercel.app",
+            url: "https://sitemap.atharvdangedev.in",
             description:
               "An intelligent XML sitemap generator that crawls websites, supports CSR/SSR rendering, respects robots.txt rules, and outputs SEO-optimized sitemaps.",
             applicationCategory: "SEO Tool",

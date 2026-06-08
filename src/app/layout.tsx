@@ -19,7 +19,7 @@ export const metadata = {
   },
   description:
     "Generate comprehensive, SEO-optimized XML sitemaps for your website with real-time tracking, intelligent crawling, and automatic sitemap discovery.",
-  metadataBase: new URL("https://xml-sitemap-generator.vercel.app"),
+  metadataBase: new URL("https://sitemap.atharvdangedev.in"),
   alternates: {
     canonical: "/",
   },
@@ -27,7 +27,7 @@ export const metadata = {
     title: "XML Sitemap Generator - Free SEO Sitemap & Image Crawler",
     description:
       "Generate comprehensive, SEO-optimized XML sitemaps for your website with real-time tracking, intelligent crawling, and automatic sitemap discovery.",
-    url: "https://xml-sitemap-generator.vercel.app",
+    url: "https://sitemap.atharvdangedev.in",
     siteName: "XML Sitemap Generator",
     images: [
       {
