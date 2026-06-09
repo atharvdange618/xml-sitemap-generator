@@ -43,6 +43,10 @@ export async function fetchUrlWithPuppeteer(
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    );
+    await page.setViewport({ width: 1280, height: 800 });
     await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: 15000,
@@ -62,6 +66,10 @@ export async function checkUrlWithPuppeteer(
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    );
+    await page.setViewport({ width: 1280, height: 800 });
     const res = await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: 15000,

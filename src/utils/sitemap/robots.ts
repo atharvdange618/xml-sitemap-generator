@@ -29,10 +29,12 @@ export function parseRobotsTxt(
       working = working.slice(0, -1);
     }
     const escaped = working.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-    const regexStr = "^" + escaped.replace(/\*/g, ".*") + (hasEndAnchor ? "$" : "");
+    const regexStr =
+      "^" + escaped.replace(/\*/g, ".*") + (hasEndAnchor ? "$" : "");
     return new RegExp(regexStr);
   }
 
+  let inUserAgentSection = false;
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
@@ -44,14 +46,18 @@ export function parseRobotsTxt(
     const value = trimmed.slice(colonIdx + 1).trim();
 
     if (key === "user-agent") {
+      if (!inUserAgentSection) {
+        currentAgents.length = 0;
+        inUserAgentSection = true;
+      }
       currentAgents.push(value.toLowerCase());
     } else if (key === "disallow" || key === "allow") {
-      const matchesUs = currentAgents.some(
-        (agent) =>
-          agent === "*" ||
-          agent === userAgent.toLowerCase() ||
-          userAgent.toLowerCase().startsWith(agent),
-      );
+      inUserAgentSection = false;
+      const matchesUs = currentAgents.some((agent) => {
+        const a = agent.toLowerCase();
+        const u = userAgent.toLowerCase();
+        return a === "*" || a === u || u.includes(a) || a.includes(u);
+      });
       if (matchesUs && value) {
         const compiled = { pattern: value, regex: compilePattern(value) };
         if (key === "disallow") {

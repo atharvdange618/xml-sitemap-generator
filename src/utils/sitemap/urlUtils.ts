@@ -87,7 +87,12 @@ export function normalizeUrl(urlStr: string, baseUrl?: string): string {
 
 export function isPrivateIP(hostname: string): boolean {
   const lower = hostname.toLowerCase();
-  if (lower === "localhost" || lower === "127.0.0.1" || lower === "::1" || lower === "0.0.0.0") {
+  if (
+    lower === "localhost" ||
+    lower === "127.0.0.1" ||
+    lower === "::1" ||
+    lower === "0.0.0.0"
+  ) {
     return true;
   }
 
@@ -103,14 +108,20 @@ export function isPrivateIP(hostname: string): boolean {
     if (a >= 224) return true; // Multicast + reserved
   }
 
-  if (lower.startsWith("fe80:") || lower.startsWith("fc") || lower.startsWith("fd")) {
+  if (
+    lower.startsWith("fe80:") ||
+    lower.startsWith("fc") ||
+    lower.startsWith("fd")
+  ) {
     return true;
   }
 
   return false;
 }
 
-export function validateCrawlUrl(url: string): { ok: true; normalized: string } | { ok: false; reason: string } {
+export function validateCrawlUrl(
+  url: string,
+): { ok: true; normalized: string } | { ok: false; reason: string } {
   if (!url || typeof url !== "string") {
     return { ok: false, reason: "URL is required" };
   }
@@ -127,7 +138,10 @@ export function validateCrawlUrl(url: string): { ok: true; normalized: string } 
   }
 
   if (isPrivateIP(parsed.hostname)) {
-    return { ok: false, reason: "Private/internal IP addresses are not allowed" };
+    return {
+      ok: false,
+      reason: "Private/internal IP addresses are not allowed",
+    };
   }
 
   return { ok: true, normalized: parsed.href };
@@ -169,4 +183,16 @@ export function isValidUrl(url: string): boolean {
   }
 
   return true;
+}
+
+export function isSameOrWwwDomain(url1: string, url2: string): boolean {
+  try {
+    const u1 = new URL(url1);
+    const u2 = new URL(url2);
+    const h1 = u1.hostname.toLowerCase().replace(/^www\./, "");
+    const h2 = u2.hostname.toLowerCase().replace(/^www\./, "");
+    return h1 === h2;
+  } catch {
+    return false;
+  }
 }

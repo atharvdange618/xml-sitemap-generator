@@ -3,7 +3,12 @@ import { parse, HTMLElement } from "node-html-parser";
 import { SitemapStats } from "../statsLogger";
 import { config, CrawlerConfig } from "./config";
 import { CrawlCaches, createCrawlCaches, setCrawlCache } from "./cache";
-import { isValidImageUrl, normalizeUrl, isValidUrl } from "./urlUtils";
+import {
+  isValidImageUrl,
+  normalizeUrl,
+  isValidUrl,
+  isSameOrWwwDomain,
+} from "./urlUtils";
 import { fetchWithRetry } from "./httpClient";
 import {
   fetchRobotsTxtRules,
@@ -305,9 +310,7 @@ export async function crawlSite(
       if (!pageIndexable) {
         if (links.length === 1 && links[0] !== normalizedCurrent) {
           try {
-            const target = new URL(links[0]);
-            const base = new URL(baseUrl);
-            if (target.hostname === base.hostname) {
+            if (isSameOrWwwDomain(links[0], baseUrl)) {
               followTarget = links[0];
             }
           } catch {}
@@ -318,9 +321,7 @@ export async function crawlSite(
           normalizedCanonical !== normalizedCurrent
         ) {
           try {
-            const canonicalObj = new URL(normalizedCanonical);
-            const baseObj = new URL(baseUrl);
-            if (canonicalObj.hostname === baseObj.hostname) {
+            if (isSameOrWwwDomain(normalizedCanonical, baseUrl)) {
               followTarget = normalizedCanonical;
             }
           } catch {}
@@ -448,9 +449,7 @@ export async function crawlUrl(
 
   if (httpData && httpData.redirectTarget) {
     try {
-      const redirectTargetUrl = new URL(httpData.redirectTarget);
-      const baseUrlObj = new URL(baseUrl);
-      if (redirectTargetUrl.hostname === baseUrlObj.hostname) {
+      if (isSameOrWwwDomain(httpData.redirectTarget, baseUrl)) {
         return {
           links: [httpData.redirectTarget],
           lastmod: null,
@@ -521,9 +520,7 @@ export async function crawlUrl(
 
     if (puppeteerData.redirectTarget) {
       try {
-        const redirectTargetUrl = new URL(puppeteerData.redirectTarget);
-        const baseUrlObj = new URL(baseUrl);
-        if (redirectTargetUrl.hostname === baseUrlObj.hostname) {
+        if (isSameOrWwwDomain(puppeteerData.redirectTarget, baseUrl)) {
           return {
             links: [puppeteerData.redirectTarget],
             lastmod: null,
@@ -601,7 +598,11 @@ export async function crawlUrl(
         images: [],
       };
     }
-  } catch (puppeteerError) {
+  } catch (puppeteerError: any) {
+    console.error(
+      `[crawlUrl] Puppeteer fallback failed for ${currentUrl}:`,
+      puppeteerError.message || puppeteerError,
+    );
     return {
       links: [],
       lastmod: null,
@@ -672,21 +673,24 @@ export async function getLinksWithHTTP(
   }
 
   if (response.status !== 200) {
-    const result = {
-      links: [],
-      isCSR: false,
-      lastmod: null,
-      alternates: [],
-      canonical: null,
-      isIndexable: false,
-      images: [],
-    };
-    setCrawlCache(caches, currentUrl, {
-      lastmodHeader: response.headers["last-modified"] || null,
-      etag: response.headers["etag"] || null,
-      ...result,
-    });
-    return result;
+    if (response.status === 404) {
+      const result = {
+        links: [],
+        isCSR: false,
+        lastmod: null,
+        alternates: [],
+        canonical: null,
+        isIndexable: false,
+        images: [],
+      };
+      setCrawlCache(caches, currentUrl, {
+        lastmodHeader: response.headers["last-modified"] || null,
+        etag: response.headers["etag"] || null,
+        ...result,
+      });
+      return result;
+    }
+    throw new Error(`HTTP status ${response.status}`);
   }
 
   const contentType = (response.headers["content-type"] as string) || "";
@@ -809,6 +813,10 @@ export async function getLinksWithPuppeteer(
   const page = await browser.newPage();
 
   try {
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    );
+    await page.setViewport({ width: 1280, height: 800 });
     await page.setRequestInterception(true);
     page.on("request", (req) => {
       const type = req.resourceType();
@@ -852,9 +860,7 @@ export async function getLinksWithPuppeteer(
 
     await Promise.race([
       page.waitForFunction(
-        () =>
-          document.body &&
-          document.body.innerText.replace(/\s+/g, " ").trim().length > 300,
+        `document.body && document.body.innerText.replace(/\\s+/g, " ").trim().length > 300`,
         { timeout: 8000 },
       ),
       page.waitForSelector(
@@ -865,10 +871,10 @@ export async function getLinksWithPuppeteer(
       // Best-effort wait fallback
     });
 
-    const metaNoIndex = await page.evaluate(() => {
+    const metaNoIndex = await page.evaluate(`(() => {
       const meta = document.querySelector('meta[name="robots" i]');
       return !!(meta && /noindex/i.test(meta.getAttribute("content") || ""));
-    });
+    })()`);
 
     if (metaNoIndex) {
       return {
@@ -880,24 +886,24 @@ export async function getLinksWithPuppeteer(
       };
     }
 
-    const pageData = await page.evaluate((baseUrlStr) => {
-      const links: string[] = [];
-      const alternates: { hreflang: string; href: string }[] = [];
-      let canonical: string | null = null;
+    const pageData = (await page.evaluate(
+      `((baseUrlStr) => {
+      const links = [];
+      const alternates = [];
+      let canonical = null;
 
-      function findAllAnchors(
-        rootNode: Document | ShadowRoot = document,
-        depth = 0,
-      ): HTMLAnchorElement[] {
+      function findAllAnchors(rootNode, depth) {
+        if (!rootNode) rootNode = document;
+        if (depth === undefined) depth = 0;
         const MAX_SHADOW_DEPTH = 10;
         if (depth > MAX_SHADOW_DEPTH) return [];
 
         const anchors = Array.from(
-          rootNode.querySelectorAll("a[href]"),
-        ) as HTMLAnchorElement[];
+          rootNode.querySelectorAll("a[href]")
+        );
         const shadowRoots = Array.from(rootNode.querySelectorAll("*"))
           .map((el) => el.shadowRoot)
-          .filter(Boolean) as ShadowRoot[];
+          .filter(Boolean);
         for (const sr of shadowRoots) {
           anchors.push(...findAllAnchors(sr, depth + 1));
         }
@@ -933,7 +939,7 @@ export async function getLinksWithPuppeteer(
               }
             }
             const searchStr = params.toString();
-            url.search = searchStr ? `?${searchStr}` : "";
+            url.search = searchStr ? "?" + searchStr : "";
 
             if (url.pathname.length > 1 && url.pathname.endsWith("/")) {
               url.pathname = url.pathname.slice(0, -1);
@@ -944,7 +950,7 @@ export async function getLinksWithPuppeteer(
       }
 
       const linkTags = document.querySelectorAll(
-        'link[rel="canonical"], link[rel="alternate"]',
+        'link[rel="canonical"], link[rel="alternate"]'
       );
       for (const linkTag of Array.from(linkTags)) {
         try {
@@ -975,7 +981,7 @@ export async function getLinksWithPuppeteer(
               }
             }
             const searchStr = params.toString();
-            url.search = searchStr ? `?${searchStr}` : "";
+            url.search = searchStr ? "?" + searchStr : "";
 
             if (url.pathname.length > 1 && url.pathname.endsWith("/")) {
               url.pathname = url.pathname.slice(0, -1);
@@ -994,7 +1000,7 @@ export async function getLinksWithPuppeteer(
         } catch {}
       }
 
-      const images: string[] = [];
+      const images = [];
       const imgElements = document.querySelectorAll("img[src]");
       for (const imgEl of Array.from(imgElements)) {
         try {
@@ -1011,7 +1017,8 @@ export async function getLinksWithPuppeteer(
         canonical,
         images: Array.from(new Set(images)),
       };
-    }, baseUrl);
+    })('${baseUrl}')`,
+    )) as any;
 
     return {
       links: pageData.links,
@@ -1053,8 +1060,7 @@ export function extractLinks(
 
     try {
       const normalized = normalizeUrl(href, currentUrl);
-      const url = new URL(normalized);
-      if (url.hostname === baseUrlObj.hostname) {
+      if (isSameOrWwwDomain(normalized, baseUrl)) {
         if (isValidUrl(normalized)) {
           links.push(normalized);
         }
@@ -1073,8 +1079,7 @@ export function extractLinks(
 
     try {
       const normalized = normalizeUrl(href, currentUrl);
-      const url = new URL(normalized);
-      if (url.hostname === baseUrlObj.hostname) {
+      if (isSameOrWwwDomain(normalized, baseUrl)) {
         if (rel === "canonical") {
           canonical = normalized;
         } else if (rel === "alternate") {
@@ -1131,10 +1136,8 @@ export async function processSitemapUrls(
   const urlsToProcess = urls
     .filter((url) => {
       try {
-        const urlObj = new URL(url);
-        const path = urlObj.pathname;
-        const isAllowed = isPathAllowed(path, robotsRules);
-        return isAllowed && urlObj.origin === baseUrl;
+        const isAllowed = isPathAllowed(new URL(url).pathname, robotsRules);
+        return isAllowed && isSameOrWwwDomain(url, baseUrl);
       } catch {
         return false;
       }
@@ -1330,6 +1333,10 @@ export async function getUrlMetadata(
       const browser = await getBrowser();
       const page = await browser.newPage();
       try {
+        await page.setUserAgent(
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        );
+        await page.setViewport({ width: 1280, height: 800 });
         await page.setRequestInterception(true);
         page.on("request", (req) => {
           const type = req.resourceType();
@@ -1351,21 +1358,21 @@ export async function getUrlMetadata(
           return { lastmod: null, isIndexable: false, images: [] };
         }
 
-        const metaNoIndex = await page.evaluate(() => {
+        const metaNoIndex = await page.evaluate(`(() => {
           const meta = document.querySelector('meta[name="robots" i]');
           return !!(
             meta && /noindex/i.test(meta.getAttribute("content") || "")
           );
-        });
+        })()`);
 
         if (metaNoIndex) {
           return { lastmod: null, isIndexable: false, images: [] };
         }
 
-        const canonical = await page.evaluate(() => {
+        const canonical = (await page.evaluate(`(() => {
           const link = document.querySelector('link[rel="canonical"]');
           return link ? link.getAttribute("href") : null;
-        });
+        })()`)) as string | null;
 
         if (canonical) {
           const normalizedCanonical = normalizeUrl(canonical, url);
@@ -1376,11 +1383,11 @@ export async function getUrlMetadata(
         }
 
         // Extract images in evaluate
-        const imgUrls = await page.evaluate(() => {
+        const imgUrls = (await page.evaluate(`(() => {
           return Array.from(document.querySelectorAll("img[src]"))
             .map((img) => img.getAttribute("src"))
-            .filter(Boolean) as string[];
-        });
+            .filter(Boolean);
+        })()`)) as string[];
         const normalizedImages = imgUrls
           .map((src) => {
             try {
@@ -1403,7 +1410,11 @@ export async function getUrlMetadata(
           await page.close();
         } catch {}
       }
-    } catch {
+    } catch (e: any) {
+      console.error(
+        `[getUrlMetadata] Puppeteer fallback failed for ${url}:`,
+        e.message || e,
+      );
       return { lastmod: null, isIndexable: false, images: [] };
     }
   }
