@@ -1,127 +1,76 @@
-import { http } from "./httpClient";
+import { fetchRobotsTxtWithTimeout } from "./httpClient";
+import { config } from "./config";
 
-export interface CompiledRule {
-  pattern: string;
-  regex: RegExp;
-}
+export interface CompiledRule { pattern: string; regex: RegExp; }
+export interface RobotsRulesCompiled { disallowed: CompiledRule[]; allowed: CompiledRule[]; }
 
-export interface RobotsRulesCompiled {
-  disallowed: CompiledRule[];
-  allowed: CompiledRule[];
-}
-
-export function parseRobotsTxt(
-  content: string,
-  userAgent = "XmlSitemapGenerator",
-): RobotsRulesCompiled {
-  const rules: RobotsRulesCompiled = {
-    disallowed: [],
-    allowed: [],
-  };
+export function parseRobotsTxt(content: string, userAgent = "XmlSitemapGenerator"): RobotsRulesCompiled {
+  const rules: RobotsRulesCompiled = { disallowed: [], allowed: [] };
   const currentAgents: string[] = [];
   const lines = content.split(/\r?\n/);
 
   function compilePattern(pattern: string): RegExp {
-    let hasEndAnchor = false;
-    let working = pattern;
-    if (working.endsWith("$")) {
-      hasEndAnchor = true;
-      working = working.slice(0, -1);
-    }
-    const escaped = working.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-    const regexStr =
-      "^" + escaped.replace(/\*/g, ".*") + (hasEndAnchor ? "$" : "");
-    return new RegExp(regexStr);
+    let hasEnd = false;
+    let w = pattern;
+    if (w.endsWith("$")) { hasEnd = true; w = w.slice(0, -1); }
+    const esc = w.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    return new RegExp("^" + esc.replace(/\*/g, ".*") + (hasEnd ? "$" : ""));
   }
 
-  let inUserAgentSection = false;
+  let inUA = false;
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    const colonIdx = trimmed.indexOf(":");
-    if (colonIdx === -1) continue;
-
-    const key = trimmed.slice(0, colonIdx).trim().toLowerCase();
-    const value = trimmed.slice(colonIdx + 1).trim();
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const ci = t.indexOf(":");
+    if (ci === -1) continue;
+    const key = t.slice(0, ci).trim().toLowerCase();
+    const val = t.slice(ci + 1).trim();
 
     if (key === "user-agent") {
-      if (!inUserAgentSection) {
-        currentAgents.length = 0;
-        inUserAgentSection = true;
-      }
-      currentAgents.push(value.toLowerCase());
+      if (!inUA) { currentAgents.length = 0; inUA = true; }
+      currentAgents.push(val.toLowerCase());
     } else if (key === "disallow" || key === "allow") {
-      inUserAgentSection = false;
-      const matchesUs = currentAgents.some((agent) => {
-        const a = agent.toLowerCase();
+      inUA = false;
+      const matches = currentAgents.some(a => {
         const u = userAgent.toLowerCase();
         return a === "*" || a === u || u.includes(a) || a.includes(u);
       });
-      if (matchesUs && value) {
-        const compiled = { pattern: value, regex: compilePattern(value) };
-        if (key === "disallow") {
-          rules.disallowed.push(compiled);
-        } else {
-          rules.allowed.push(compiled);
-        }
+      if (matches && val) {
+        const c = { pattern: val, regex: compilePattern(val) };
+        if (key === "disallow") rules.disallowed.push(c);
+        else rules.allowed.push(c);
       }
     }
   }
-
   return rules;
 }
 
-export function isPathAllowed(
-  path: string,
-  rules: RobotsRulesCompiled,
-): boolean {
-  let matchingDisallow: CompiledRule | null = null;
-  let matchingAllow: CompiledRule | null = null;
-
-  for (const rule of rules.disallowed) {
-    if (rule.regex.test(path)) {
-      if (
-        !matchingDisallow ||
-        rule.pattern.length > matchingDisallow.pattern.length
-      ) {
-        matchingDisallow = rule;
-      }
-    }
+export function isPathAllowed(path: string, rules: RobotsRulesCompiled): boolean {
+  let md: CompiledRule|null = null, ma: CompiledRule|null = null;
+  for (const r of rules.disallowed) {
+    if (r.regex.test(path) && (!md || r.pattern.length > md.pattern.length)) md = r;
   }
-
-  for (const rule of rules.allowed) {
-    if (rule.regex.test(path)) {
-      if (
-        !matchingAllow ||
-        rule.pattern.length > matchingAllow.pattern.length
-      ) {
-        matchingAllow = rule;
-      }
-    }
+  for (const r of rules.allowed) {
+    if (r.regex.test(path) && (!ma || r.pattern.length > ma.pattern.length)) ma = r;
   }
-
-  if (matchingDisallow && matchingAllow) {
-    if (matchingAllow.pattern.length >= matchingDisallow.pattern.length) {
-      return true;
-    }
-    return false;
-  }
-
-  if (matchingDisallow) return false;
+  if (md && ma) return ma.pattern.length >= md.pattern.length;
+  if (md) return false;
   return true;
 }
 
 export async function fetchRobotsTxtRules(
   baseUrl: string,
-): Promise<RobotsRulesCompiled> {
-  const robotsUrl = `${baseUrl}/robots.txt`;
-  let robotsContent = "";
+  signal?: AbortSignal,
+): Promise<{ rules: RobotsRulesCompiled; content: string }> {
+  let content = "";
   try {
-    const response = await http.get(robotsUrl);
-    robotsContent = response.data;
-  } catch (error: any) {
-    console.warn(`HTTP failed to fetch robots.txt (${error.message}).`);
+    console.log(`[Robots] Fetching robots.txt from ${baseUrl}...`);
+    const res = await fetchRobotsTxtWithTimeout(baseUrl, config.robotsTxtTimeout, signal);
+    content = res.data;
+    console.log(`[Robots] robots.txt fetched successfully (${content.length} bytes)`);
+  } catch (e: any) {
+    if (e?.name === "AbortError") console.warn(`[Robots] robots.txt fetch aborted for ${baseUrl}`);
+    else console.warn(`[Robots] HTTP failed to fetch robots.txt (${e.message}).`);
   }
-  return parseRobotsTxt(robotsContent);
+  return { rules: parseRobotsTxt(content), content };
 }
