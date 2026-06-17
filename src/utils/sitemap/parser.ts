@@ -4,7 +4,7 @@ import { isValidUrl, escapeXml } from "./urlUtils";
 import { SitemapItem } from "../../types/sitemap";
 import { Browser } from "puppeteer";
 
-export async function fetchAndParseSitemap(sitemapUrl: string, signal?: AbortSignal, getBrowser?: () => Promise<Browser>): Promise<string[]> {
+export async function fetchAndParseSitemap(sitemapUrl: string, signal?: AbortSignal, getBrowser?: () => Promise<Browser>): Promise<{ url: string; lastmod: string | null }[]> {
   try {
     console.log(`[Sitemap] Fetching sitemap: ${sitemapUrl}`);
     const response = await fetchWithRetry(sitemapUrl, {}, 3, signal);
@@ -42,26 +42,37 @@ export async function fetchAndParseSitemap(sitemapUrl: string, signal?: AbortSig
   }
 }
 
-export function parseSitemap(xml: string): string[] {
-  const urls: string[] = [];
-  const locs = xml.match(/<loc>(.*?)<\/loc>/g) || [];
-  for (const m of locs) {
-    let url = m.replace(/<\/?loc>/g, "").trim();
+export function parseSitemap(xml: string): { url: string; lastmod: string | null }[] {
+  const results: { url: string; lastmod: string | null }[] = [];
+  const urlBlocks = xml.match(/<url>([\s\S]*?)<\/url>/g) || [];
+  for (const block of urlBlocks) {
+    const locMatch = block.match(/<loc>([\s\S]*?)<\/loc>/);
+    if (!locMatch) continue;
+    let url = locMatch[1].replace(/<\/?loc>/g, "").trim();
     if (url.startsWith("<![CDATA[") && url.endsWith("]]>")) url = url.substring(9, url.length - 3).trim();
-    if (url && isValidUrl(url, true)) urls.push(url);
+    if (!url || !isValidUrl(url, true)) continue;
+
+    let lastmod: string | null = null;
+    const lastmodMatch = block.match(/<lastmod>([\s\S]*?)<\/lastmod>/);
+    if (lastmodMatch) {
+      const lm = lastmodMatch[1].trim();
+      const d = new Date(lm);
+      if (!isNaN(d.getTime())) lastmod = d.toISOString();
+    }
+    results.push({ url, lastmod });
   }
-  return urls;
+  return results;
 }
 
-export async function parseSitemapIndex(xml: string, signal?: AbortSignal, getBrowser?: () => Promise<Browser>): Promise<string[]> {
+export async function parseSitemapIndex(xml: string, signal?: AbortSignal, getBrowser?: () => Promise<Browser>): Promise<{ url: string; lastmod: string | null }[]> {
   const urls: string[] = [];
   const locs = xml.match(/<loc>(.*?)<\/loc>/g) || [];
   for (const m of locs) {
     let url = m.replace(/<\/?loc>/g, "").trim();
     if (url.startsWith("<![CDATA[") && url.endsWith("]]>")) url = url.substring(9, url.length - 3).trim();
-    if (url) urls.push(url);
+    if (url && !url.endsWith(".gz")) urls.push(url);
   }
-  const all: string[] = [];
+  const all: { url: string; lastmod: string | null }[] = [];
   for (let i = 0; i < urls.length; i += 5) {
     const batch = urls.slice(i, i + 5);
     const results = await Promise.all(batch.map(u => fetchAndParseSitemap(u, signal, getBrowser).catch(() => [])));

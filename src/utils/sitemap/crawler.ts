@@ -584,7 +584,7 @@ export async function processSitemapUrls(
   onProgress?: (url:string,count:number)=>void,
   robotsRules: RobotsRulesCompiled = { disallowed: [], allowed: [] },
   getBrowser?: ()=>Promise<Browser>, caches?: CrawlCaches,
-  signal?: AbortSignal,
+  signal?: AbortSignal, lastmodMap?: Map<string, string | null>,
 ): Promise<Map<string, SitemapItem>> {
   const sitemapData = new Map<string, SitemapItem>();
   const urlsToProcess = urls.filter(url => {
@@ -596,15 +596,16 @@ export async function processSitemapUrls(
 
   const processOne = async (url: string) => {
     if (sitemapData.size >= maxPages) return;
-    const { lastmod, isIndexable, images } = await getUrlMetadata(url, getBrowser, caches, signal);
+    const existingLastmod = lastmodMap?.get(url) || null;
+    const { lastmod, isIndexable, images } = await getUrlMetadata(url, getBrowser, caches, signal, true);
     if (isIndexable && sitemapData.size < maxPages) {
       const depth = new URL(url).pathname.split("/").filter(Boolean).length;
-      sitemapData.set(url, { lastmod, priority: calculatePriority(depth), alternates: [], images: images?.map(img => typeof img === "string" ? { loc: img } : img) || [] });
+      sitemapData.set(url, { lastmod: lastmod || existingLastmod, priority: calculatePriority(depth), alternates: [], images: images?.map(img => typeof img === "string" ? { loc: img } : img) || [] });
       if (onProgress) onProgress(url, Math.min(sitemapData.size, maxPages));
     }
   };
 
-  const wc = cfg.concurrency || CONCURRENCY;
+  const wc = Math.max(cfg.concurrency || CONCURRENCY, 10);
   await Promise.all(Array.from({ length: wc }, async () => {
     while (true) {
       if (signal?.aborted) break;
@@ -620,7 +621,7 @@ export async function processSitemapUrls(
 
 export async function getUrlMetadata(
   url: string, getBrowser?: () => Promise<Browser>, caches?: CrawlCaches,
-  signal?: AbortSignal,
+  signal?: AbortSignal, headOnly = false,
 ): Promise<{ lastmod: string|null; isIndexable: boolean; images: string[] }> {
   const cached = caches ? caches.crawlCache[url] : undefined;
   const headers: Record<string,string> = {};
@@ -634,10 +635,15 @@ export async function getUrlMetadata(
 
   if (runHttp) {
     try {
-      response = await fetchWithRetry(url, headers, 3, signal);
+      response = await fetchWithRetry(url, headers, 3, signal, undefined, headOnly);
       if (caches) caches.renderCache.delete(`${uo}:httpBlocked`);
       if (response.status === 304 && cached) return { lastmod: cached.lastmod || null, isIndexable: cached.isIndexable !== false, images: cached.images || [] };
       if (response.status === 200) {
+        if (headOnly) {
+          const xRobots = response.headers["x-robots-tag"];
+          if (xRobots && /noindex/i.test(String(xRobots))) return { lastmod: null, isIndexable: false, images: [] };
+          return { lastmod: null, isIndexable: true, images: [] };
+        }
         const ct = (response.headers["content-type"] as string) || "";
         if ((ct.includes("text/html") || ct.includes("application/xhtml+xml")) && !ct.includes("application/json")) {
           root = parse(response.data || ""); pageIndexable = isIndexable(response.headers as any, root); httpSuccess = true;
@@ -741,10 +747,13 @@ export async function createSitemap(
 
     const sitemapUrlsList = await discoverSitemap(baseUrl, signal, robotsContent, getBrowser);
     let sitemapUrls: string[] = [];
+    const sitemapLastmod = new Map<string, string | null>();
 
     if (sitemapUrlsList && sitemapUrlsList.length > 0) {
       const results = await Promise.all(sitemapUrlsList.map(url => fetchAndParseSitemap(url, signal, getBrowser)));
-      sitemapUrls = Array.from(new Set(results.flat())).filter(u => isValidUrl(u));
+      const flat = results.flat();
+      sitemapUrls = Array.from(new Set(flat.map(e => e.url))).filter(u => isValidUrl(u));
+      for (const e of flat) { if (isValidUrl(e.url)) sitemapLastmod.set(e.url, e.lastmod); }
       stats.setSitemapPages(sitemapUrls.length);
       throttledProgress(`Sitemap: ${sitemapUrls.length} URLs | Starting crawl...`, 0);
     }
@@ -766,7 +775,7 @@ export async function createSitemap(
     if (uncrawled.length > 0 && finalData.size < maxPages) {
       const add = await processSitemapUrls(uncrawled, baseUrl, maxPages - finalData.size, config,
         (url, count) => throttledProgress(url, Math.min(finalData.size + count, maxPages)),
-        robotsRules, getBrowser, jobCaches, signal);
+        robotsRules, getBrowser, jobCaches, signal, sitemapLastmod);
       for (const [k,v] of add) { if (finalData.size >= maxPages) break; finalData.set(k,v); }
     }
 

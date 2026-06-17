@@ -21,6 +21,7 @@ export async function fetchWithRetry(
   attempts = 3,
   signal?: AbortSignal,
   timeoutMs?: number,
+  headOnly = false,
 ): Promise<AxiosResponse> {
   for (let i = 0; i < attempts; i++) {
     if (signal?.aborted) {
@@ -28,7 +29,8 @@ export async function fetchWithRetry(
     }
     try {
       const seenHostPaths = new Set<string>();
-      const response = await http.get(url, {
+      const method = headOnly ? "head" : "get";
+      const response = await http[method](url, {
         headers,
         signal,
         timeout: timeoutMs,
