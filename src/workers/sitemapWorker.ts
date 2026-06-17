@@ -8,96 +8,71 @@ import zlib from "zlib";
 import { promisify } from "util";
 
 const gzipAsync = promisify(zlib.gzip);
-
 const SITEMAPS_DIR = path.join(process.cwd(), ".logs", "sitemaps");
-
-if (!fs.existsSync(SITEMAPS_DIR)) {
-  fs.mkdirSync(SITEMAPS_DIR, { recursive: true });
-}
+if (!fs.existsSync(SITEMAPS_DIR)) fs.mkdirSync(SITEMAPS_DIR, { recursive: true });
 
 console.log("Sitemap Background Worker Initializing...");
 
 const JOB_TIMEOUT_MS = 10 * 60 * 1000;
+const workerConcurrency = parseInt(process.env.SITEMAP_WORKER_CONCURRENCY || "2", 10);
 
-const worker = new Worker(
-  "sitemap-queue",
+const worker = new Worker("sitemap-queue",
   async (job: Job<SitemapJobData>) => {
     const { url, maxPages } = job.data;
     const jobId = job.id || "unknown";
-
-    console.log(
-      `[Job ${jobId}] Starting sitemap crawl for: ${url} (cap: ${maxPages})`,
-    );
+    console.log(`[Job ${jobId}] Starting sitemap crawl for: ${url} (cap: ${maxPages})`);
 
     const onProgress = async (crawledUrl: string, count: number) => {
-      await job.updateProgress({
-        type: "progress",
-        url: crawledUrl,
-        count,
-      });
+      await job.updateProgress({ type: "progress", url: crawledUrl, count });
     };
 
+    const ac = new AbortController();
+    const tid = setTimeout(() => ac.abort(), JOB_TIMEOUT_MS);
+
     try {
-      const result = await Promise.race([
-        createSitemap(url, maxPages, onProgress),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () =>
-              reject(
-                new Error(
-                  `Job timed out after ${JOB_TIMEOUT_MS / 60000} minutes`,
-                ),
-              ),
-            JOB_TIMEOUT_MS,
-          ),
-        ),
-      ]);
+      const result = await createSitemap(url, maxPages, onProgress, ac.signal);
+      clearTimeout(tid);
 
       const { sitemap, chunks, stats } = result;
       const jobDir = path.join(SITEMAPS_DIR, jobId);
       fs.mkdirSync(jobDir, { recursive: true });
 
       fs.writeFileSync(path.join(jobDir, "sitemap.xml"), sitemap, "utf-8");
-      const gzipSitemapBuffer = await gzipAsync(Buffer.from(sitemap));
-      fs.writeFileSync(path.join(jobDir, "sitemap.xml.gz"), gzipSitemapBuffer);
+      fs.writeFileSync(path.join(jobDir, "sitemap.xml.gz"), await gzipAsync(Buffer.from(sitemap)));
 
-      if (chunks && chunks.length > 0) {
+      if (chunks?.length) {
         for (let i = 0; i < chunks.length; i++) {
-          const chunkName = `sitemap-${i + 1}.xml`;
-          fs.writeFileSync(path.join(jobDir, chunkName), chunks[i], "utf-8");
-          const gzipChunk = await gzipAsync(Buffer.from(chunks[i]));
-          fs.writeFileSync(path.join(jobDir, `${chunkName}.gz`), gzipChunk);
+          const name = `sitemap-${i + 1}.xml`;
+          fs.writeFileSync(path.join(jobDir, name), chunks[i], "utf-8");
+          fs.writeFileSync(path.join(jobDir, `${name}.gz`), await gzipAsync(Buffer.from(chunks[i])));
         }
-        console.log(
-          `[Job ${jobId}] Wrote ${chunks.length} split sitemap chunk files`,
-        );
+        console.log(`[Job ${jobId}] Wrote ${chunks.length} split sitemap chunk files`);
       }
 
-      console.log(
-        `[Job ${jobId}] Crawl completed. Discovered ${stats.statistics.crawling.pagesDiscovered} pages. Saved files to ${jobDir}`,
-      );
-
-      return {
-        success: true,
-        stats,
-      };
+      console.log(`[Job ${jobId}] Crawl completed. Discovered ${stats.statistics.crawling.pagesDiscovered} pages. Saved to ${jobDir}`);
+      return { success: true, stats };
     } catch (error: any) {
+      clearTimeout(tid);
+      if (ac.signal.aborted) {
+        const msg = `Job timed out after ${JOB_TIMEOUT_MS / 60000} minutes`;
+        console.error(`[Job ${jobId}] ${msg}`);
+        throw new Error(msg);
+      }
       console.error(`[Job ${jobId}] Critical crawler error:`, error.message);
       throw error;
     }
   },
   {
     connection: getRedisConnection(),
-    concurrency: 1,
-    lockDuration: 60000, // 60 seconds (up from 30 seconds default) to tolerate CPU-heavy event loop blocks
-    lockRenewTime: 15000, // Renew the lock every 15 seconds
+    concurrency: workerConcurrency,
+    lockDuration: 180000,
+    lockRenewTime: 30000,
+    stalledInterval: 30000,
   },
 );
 
-worker.on("completed", (job) => {
-  console.log(`[Job ${job.id}] Completed successfully!`);
-});
+worker.on("completed", job => console.log(`[Job ${job.id}] Completed successfully!`));
+worker.on("failed", (job, err) => console.error(`[Job ${job?.id}] Failed:`, err.message));
 
-worker.on("failed", (job, err) => {
-  console.error(`[Job ${job?.id}] Failed with error:`, err.message);
-});
+process.on("SIGTERM", async () => { console.log("Worker SIGTERM, shutting down..."); await worker.close(); process.exit(0); });
+process.on("SIGINT", async () => { console.log("Worker SIGINT, shutting down..."); await worker.close(); process.exit(0); });
