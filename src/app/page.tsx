@@ -720,12 +720,6 @@ export default function Home() {
               Sitemap Generator
             </span>
           </Link>
-          <Link
-            href="/docs"
-            className="text-sm font-semibold text-white hover:text-emerald-400 hover:bg-emerald-500/5 border border-neutral-800/80 hover:border-emerald-500/25 px-3 py-1.5 rounded-lg transition-all"
-          >
-            Documentation
-          </Link>
         </div>
       </nav>
 
@@ -1124,12 +1118,6 @@ export default function Home() {
               className="hover:text-neutral-300 transition-colors font-medium text-white"
             >
               Generator
-            </Link>
-            <Link
-              href="/docs"
-              className="hover:text-neutral-300 transition-colors"
-            >
-              Documentation
             </Link>
             <a
               href="https://github.com/atharvdange618/xml-sitemap-generator"
