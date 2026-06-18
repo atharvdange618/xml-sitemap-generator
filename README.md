@@ -12,19 +12,26 @@ Generate comprehensive, SEO-optimized XML sitemaps for your website with real-ti
 
 - **Intelligent Crawling** - Crawls up to 1000 pages per site (configurable from 10-1000).
 - **Sitemap Discovery** - Automatically finds and parses existing sitemaps from `robots.txt` or common paths to ensure no page is missed.
-- **Hybrid Rendering Support** - Seamlessly handles both Server-Side Rendered (SSR) and Client-Side Rendered (CSR) pages using sophisticated heuristic detection and Puppeteer fallback.
+- **Hybrid Rendering Support** - Seamlessly handles both Server-Side Rendered (SSR) and Client-Side Rendered (CSR) pages using a scoring-based heuristic model and Puppeteer fallback.
 - **Real-time Progress Tracking** - Watch your sitemap being built live with Server-Sent Events (SSE) streaming.
-- **Concurrent Processing** - Batch crawling with high-performance concurrency (5 concurrent pages by default).
+- **Concurrent Processing** - Batch crawling with high-performance concurrency (5 workers for BFS crawl, 10+ for sitemap URL verification).
 - **Smart Link Extraction** - Extracts internal links, canonicals, and alternate links while avoiding non-HTML resources.
-- **Google Image Schema Support** - Automatically parses images from standard DOM and shadow DOM, compiling them into a Google-compliant XML image sitemap.
+- **Google Image Schema Support** - Automatically parses images from standard DOM, shadow DOM, and `srcset` attributes, compiling them into a Google-compliant XML image sitemap.
 - **Sitemap Splitting & Pagination** - Automatically splits large sitemaps (> 50,000 URLs) into a sitemap index and smaller XML chunk files.
+- **HEAD-only Verification** - Sitemap-discovered URLs are verified with lightweight HEAD requests to check indexability without downloading the full page body.
 
 ### Ethical & Compliant
 
-- **robots.txt Compliance** - Automatically fetches and rigorously respects disallow rules from your site's robots.txt based on RFC 9309 standards.
+- **robots.txt Compliance** - Automatically fetches and rigorously respects disallow rules from your site's robots.txt based on RFC 9309 standards (wildcards, Allow directives, longest-match semantics).
 - **Priority-based Sitemap** - Assigns priority values based on page depth (1.0 for homepage, decreasing by 0.1 per level).
 - **Standards Compliant** - Generates XML sitemaps fully compliant with the Sitemaps.org protocol.
-- **lastmod Support** - Includes last-modified dates from HTTP headers or page generation time.
+- **lastmod Propagation** - Preserves `<lastmod>` dates from existing sitemaps, falling back to HTTP `Last-Modified` headers when unavailable.
+
+### Path Filtering
+
+- **Exclude Patterns** - Configurable path exclusion rules to skip tag, category, archive, author, and paginated pages by default.
+- **Per-hostname Timeouts** - Override request timeouts for specific domains via environment variable to handle slow or rate-limited targets.
+- **SSRF Protection** - Blocks private/internal IP addresses to prevent server-side request forgery.
 
 ### Insights & Crawl History
 
@@ -123,7 +130,7 @@ graph TD
     subgraph WorkerContainer [Background Worker sitemapWorker.ts]
         Worker[Sitemap Background Worker] -->|Polls Queue| RedisQueue
         Worker -->|Step 1: Discovery| Discovery[Parse robots.txt & Sitemap Index]
-        Discovery -->|Seed URLs| BFSQueue[BFS Crawl Queue]
+        Discovery -->|Seed URLs + lastmod| BFSQueue[BFS Crawl Queue]
         BFSQueue -->|De-queue URL| CrawlLoop{Crawl Loop}
 
         CrawlLoop -->|HTTP Fetch| FetchPhase[Fast HTTP Request]
@@ -132,7 +139,7 @@ graph TD
         CSRHeuristics -->|No| CheerioParser[Fast HTML DOM Parser]
         CSRHeuristics -->|Yes| PuppeteerBrowser[Puppeteer Headless Browser]
 
-        PuppeteerBrowser -->|Auto-Recycle after 50 loads| RecycleCheck{Recycle Browser?}
+        PuppeteerBrowser -->|Auto-Recycle after 100 loads| RecycleCheck{Recycle Browser?}
         RecycleCheck -->|Yes| Sigkill[Force Kill SIGKILL Chromium]
         RecycleCheck -->|No| RenderPage[Render JS & Extract Links]
         Sigkill --> LaunchNew[Launch New Browser Instance]
@@ -154,26 +161,28 @@ graph TD
 
 1. **Queueing**: When a crawl request is submitted via the UI or API, the request is added as a job to a BullMQ queue backed by Redis.
 2. **Crawl Worker**: A dedicated background worker pulls the job from the queue and initiates the crawl:
-   - **Sitemap Discovery**: First checks `robots.txt` for existing sitemaps and common locations. Found URLs are added to the initial set.
+   - **Sitemap Discovery**: First checks `robots.txt` for existing sitemaps and common locations. Found URLs are parsed along with their `<lastmod>` dates and added to the initial set.
    - **Intelligent Crawling**:
      - **HTTP Phase**: First attempts a fast HTTP request to fetch content and extract links.
-     - **CSR Detection**: Analyzes the HTML using heuristics (content-to-script ratio, presence of framework markers like `#root`, `#app`, etc.) to determine if it's a Client-Side Rendered SPA.
-     - **Puppeteer Phase**: If CSR is detected, it renders the page in a headless browser to extract dynamically generated links.
-3. **Merging & Metadata**: Combines URLs from existing sitemaps and the fresh crawl, fetching `lastmod` and calculating `priority` for every unique page.
+     - **CSR Detection**: Uses a scoring-based heuristic model -- evaluates visible text density, framework root selectors (`#root`, `#app`, `#__next`, etc.), splash screen presence, and hydration markers. Pages scoring >= 3 are routed to Puppeteer.
+     - **Puppeteer Phase**: If CSR is detected, renders the page in a headless browser to extract dynamically generated links from the fully rendered DOM.
+3. **Merging & Metadata**: Combines URLs from existing sitemaps and the fresh crawl. Sitemap-provided `lastmod` dates are propagated to avoid redundant re-fetches; HEAD-only requests verify indexability of sitemap-discovered URLs. `priority` is calculated for every unique page.
 4. **Streaming**: Progress is saved to Redis and streamed via Server-Sent Events (SSE) to provide real-time updates in the UI.
 
 ### Stability & Security Features
 
 - **Windows CFG Bypass**: Bypasses Control Flow Guard crashes on Windows by running the TypeScript runner with the `--no-maglev` flag.
-- **Asynchronous Browser Pooling**: Prevents resource/handle leaks by automatically recycling the headless Chromium instance in the background after every 50 page loads, ensuring active page threads are never interrupted.
+- **Asynchronous Browser Pooling**: Prevents resource/handle leaks by automatically recycling the headless Chromium instance in the background after every 100 page loads, ensuring active page threads are never interrupted.
 - **Zombie Process Protection**: Force-kills (`SIGKILL`) Chromium processes during browser recycles and job completions to prevent memory leaks and zombie processes from accumulating.
-- **Worker Lock Optimization**: Uses extended BullMQ lock duration (60s) to prevent false stalling reports when processing CPU-heavy HTML parsing tasks.
+- **Graceful Worker Shutdown**: Handles `SIGTERM` and `SIGINT` signals to cleanly close the BullMQ worker and release resources.
+- **AbortController Job Timeout**: Each crawl job has a 10-minute timeout via `AbortController` to prevent runaway crawls from blocking the worker pool.
+- **Worker Lock Optimization**: Uses extended BullMQ lock duration (180s) to prevent false stalling reports when processing CPU-heavy HTML parsing tasks.
 
 ---
 
 ## Configuration
 
-Fine-tune how the engine detects CSR apps and runs Puppeteer in [`src/utils/sitemap/config.ts`](src/utils/sitemap/config.ts):
+Fine-tune the crawler engine in [`src/utils/sitemap/config.ts`](src/utils/sitemap/config.ts):
 
 ```typescript
 export const config: CrawlerConfig = {
@@ -189,13 +198,33 @@ export const config: CrawlerConfig = {
     gotoTimeout: 15000,
     waitUntil: "domcontentloaded",
   },
-  logging: {
-    verbose: true,
-  },
+  logging: { verbose: true },
   maxDepth: 10,
   concurrency: 5,
+  defaultTimeout: 15000,
+  robotsTxtTimeout: 30000,
+  timeoutOverrides: parseTimeoutOverrides(),
+  pathExcludePatterns: parsePathExcludePatterns(),
 };
 ```
+
+| Option | Default | Description |
+|---|---|---|
+| `concurrency` | `5` | Number of concurrent workers for BFS page crawling |
+| `maxDepth` | `10` | Maximum link depth from the homepage before stopping |
+| `defaultTimeout` | `15000` | Default HTTP request timeout in milliseconds |
+| `robotsTxtTimeout` | `30000` | Timeout for fetching robots.txt (longer to handle slow servers) |
+| `timeoutOverrides` | `{}` | Per-hostname timeout overrides (env: `SITEMAP_TIMEOUT_OVERRIDES`) |
+| `pathExcludePatterns` | tag/category/archive patterns | Paths to exclude from crawling (env: `SITEMAP_EXCLUDE_PATTERNS`) |
+| `puppeteer.waitUntil` | `"domcontentloaded"` | Browser navigation wait strategy |
+
+### Environment Variables
+
+| Variable | Description |
+|---|---|
+| `SITEMAP_TIMEOUT_OVERRIDES` | JSON object mapping hostnames to timeout values in ms (e.g. `{"slow-site.com": 30000}`) |
+| `SITEMAP_EXCLUDE_PATTERNS` | Comma-separated path patterns to exclude (e.g. `/tag/,/archive/,?page=`) |
+| `SITEMAP_WORKER_CONCURRENCY` | Number of BullMQ worker threads (default: `2`) |
 
 ---
 
@@ -215,24 +244,22 @@ xml-sitemap-generator/
 │   │   │   └── logs/
 │   │   │       └── route.ts       # Stats retrieval endpoint (TS)
 │   │   ├── layout.tsx             # Root layout (TSX)
-│   │   ├── page.tsx               # Main UI & history log panel (TSX)
-│   │   └── docs/
-│   │       └── page.tsx           # App documentation page (TSX)
+│   │   └── page.tsx               # Main UI & history log panel (TSX)
 │   ├── types/
 │   │   ├── declarations.d.ts      # Global types (CSS, modules)
 │   │   └── sitemap.ts             # Shared sitemap/crawling interfaces
 │   ├── utils/
 │   │   ├── sitemap/               # Crawler engine details (TS)
-│   │   │   ├── cache.ts
-│   │   │   ├── config.ts
-│   │   │   ├── crawler.ts
-│   │   │   ├── httpClient.ts
-│   │   │   ├── index.ts
-│   │   │   ├── parser.ts
+│   │   │   ├── cache.ts           # Crawl cache (ETags, Last-Modified, render decisions)
+│   │   │   ├── config.ts          # Crawler configuration & env parsing
+│   │   │   ├── crawler.ts         # BFS crawl, CSR detection, Puppeteer fallback
+│   │   │   ├── httpClient.ts      # Axios client with retry, HEAD support, redirect loop detection
+│   │   │   ├── index.ts           # Public API barrel export
+│   │   │   ├── parser.ts          # Sitemap XML parsing, discovery, generation
 │   │   │   ├── queue.ts           # BullMQ queue helper (TS)
 │   │   │   ├── redis.ts           # Redis connection configuration (TS)
-│   │   │   ├── robots.ts
-│   │   │   └── urlUtils.ts
+│   │   │   ├── robots.ts          # robots.txt parsing (RFC 9309)
+│   │   │   └── urlUtils.ts        # URL normalization, validation, SSRF protection
 │   │   ├── sitemapGenerator.ts    # Crawler entry point wrapper (TS)
 │   │   └── statsLogger.ts         # Run logging & stats compiler (TS)
 │   └── workers/
