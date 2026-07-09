@@ -1,6 +1,11 @@
 import { NextRequest } from "next/server";
 import fs from "fs";
 import path from "path";
+import {
+  createErrorResponse,
+  createNotFoundResponse,
+} from "@/utils/apiResponses";
+import { logger } from "@/utils/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -11,17 +16,19 @@ export async function GET(request: NextRequest): Promise<Response> {
   const chunk = searchParams.get("chunk");
 
   if (!jobId) {
-    return new Response(JSON.stringify({ error: "jobId is required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return createErrorResponse(
+      { message: "jobId is required", code: "VALIDATION_FAILED" },
+      undefined,
+      400,
+    );
   }
 
   if (!/^[a-zA-Z0-9_-]+$/.test(jobId)) {
-    return new Response(JSON.stringify({ error: "Invalid jobId" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return createErrorResponse(
+      { message: "Invalid jobId", code: "VALIDATION_FAILED" },
+      undefined,
+      400,
+    );
   }
 
   const filename = format === "gzip" ? "sitemap.xml.gz" : "sitemap.xml";
@@ -38,10 +45,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   );
 
   if (!fs.existsSync(filePath)) {
-    return new Response(JSON.stringify({ error: "Sitemap file not found" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
+    return createNotFoundResponse("Sitemap file");
   }
 
   try {
@@ -56,13 +60,9 @@ export async function GET(request: NextRequest): Promise<Response> {
       },
     });
   } catch (error: any) {
-    console.error("Failed to read sitemap file:", error);
-    return new Response(
-      JSON.stringify({ error: "Failed to read file: " + error.message }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    logger.error("Failed to read sitemap file", error, "api:download", {
+      filePath,
+    });
+    return createErrorResponse(error, undefined, 500);
   }
 }

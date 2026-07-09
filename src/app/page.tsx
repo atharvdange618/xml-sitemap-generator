@@ -57,8 +57,8 @@ export default function Home() {
     try {
       const res = await fetch("/api/logs?limit=5");
       if (res.ok) {
-        const data = await res.json();
-        setHistory(data);
+        const json = await res.json();
+        setHistory(json.data || []);
       }
     } catch (err) {
       console.error("Failed to fetch crawl history:", err);
@@ -95,10 +95,16 @@ export default function Home() {
 
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || "Failed to start crawler");
+        const errorMessage =
+          errData.error?.message || errData.error || "Failed to start crawler";
+        throw new Error(errorMessage);
       }
 
-      const { jobId } = await res.json();
+      const responseData = await res.json();
+      const jobId = responseData.data?.jobId || responseData.jobId;
+      if (!jobId) {
+        throw new Error("No job ID returned from server");
+      }
       setActiveJobId(jobId);
 
       const eventSource = new EventSource(
@@ -231,7 +237,7 @@ export default function Home() {
                 <span>Sitemap Report Available</span>
               </div>
               <h3
-                className="text-base md:text-lg font-mono font-medium text-white truncate max-w-[280px] md:max-w-xl"
+                className="text-base md:text-lg font-mono font-medium text-white truncate max-w-70 md:max-w-xl"
                 title={report.websiteUrl}
               >
                 {report.websiteUrl}

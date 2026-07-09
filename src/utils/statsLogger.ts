@@ -1,12 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { StatsJson, CrawlError } from "../types/sitemap";
+import { atomicWriteFile, ensureDirectory } from "@/utils/fileOps";
+import { logger } from "@/utils/logger";
 
 const LOGS_DIR = path.join(process.cwd(), ".logs");
-
-if (!fs.existsSync(LOGS_DIR)) {
-  fs.mkdirSync(LOGS_DIR, { recursive: true });
-}
 
 export class SitemapStats {
   public websiteUrl: string;
@@ -66,7 +64,11 @@ export class SitemapStats {
     this.finalSitemapTotal = count;
   }
 
-  setPageBreakdown(sitemapOnly: number, crawledOnly: number, overlap: number): void {
+  setPageBreakdown(
+    sitemapOnly: number,
+    crawledOnly: number,
+    overlap: number,
+  ): void {
     this.sitemapOnlyPages = sitemapOnly;
     this.crawledOnlyPages = crawledOnly;
     this.overlapPages = overlap;
@@ -167,21 +169,17 @@ export class SitemapStats {
     const filepath = path.join(LOGS_DIR, filename);
 
     try {
-      await fs.promises.writeFile(
-        filepath,
-        JSON.stringify(this.toJSON(), null, 2),
-      );
-      console.log(`\nStats saved to: ${filepath}`);
+      await ensureDirectory(LOGS_DIR);
+      const content = JSON.stringify(this.toJSON(), null, 2);
+      await atomicWriteFile(filepath, content);
+      logger.info("Stats saved", "statsLogger", { filepath });
 
       const latestPath = path.join(LOGS_DIR, "latest.json");
-      await fs.promises.writeFile(
-        latestPath,
-        JSON.stringify(this.toJSON(), null, 2),
-      );
+      await atomicWriteFile(latestPath, content);
 
       return filepath;
     } catch (error: any) {
-      console.error(`Error saving stats: ${error.message}`);
+      logger.error("Error saving stats", error, "statsLogger", { filepath });
       return null;
     }
   }
@@ -190,14 +188,30 @@ export class SitemapStats {
 export async function getRecentLogs(limit = 10): Promise<StatsJson[]> {
   try {
     const files = await fs.promises.readdir(LOGS_DIR);
-    const jsonFiles = files
-      .filter((f) => f.endsWith(".json") && f !== "latest.json")
-      .sort()
-      .reverse()
-      .slice(0, limit);
+    const jsonFiles = files.filter(
+      (f) => f.endsWith(".json") && f !== "latest.json",
+    );
+
+    const filesWithTimestamp = jsonFiles.map((f) => {
+      const match = f.match(
+        /_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)\.json$/,
+      );
+      let sortableTimestamp = "";
+      if (match) {
+        sortableTimestamp = match[1].replace(
+          /T(\d{2})-(\d{2})-(\d{2})-(\d{3}Z)$/,
+          "T$1:$2:$3.$4",
+        );
+      }
+      return { file: f, timestamp: sortableTimestamp };
+    });
+
+    filesWithTimestamp.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+    const recentFiles = filesWithTimestamp.slice(0, limit);
 
     const logs: StatsJson[] = [];
-    for (const file of jsonFiles) {
+    for (const { file } of recentFiles) {
       const content = await fs.promises.readFile(
         path.join(LOGS_DIR, file),
         "utf-8",
@@ -207,7 +221,7 @@ export async function getRecentLogs(limit = 10): Promise<StatsJson[]> {
 
     return logs;
   } catch (error: any) {
-    console.error(`Error reading logs: ${error.message}`);
+    logger.error("Error reading logs", error, "statsLogger");
     return [];
   }
 }

@@ -1,5 +1,11 @@
 import { NextRequest } from "next/server";
 import { getRecentLogs, getLatestLog } from "@/utils/statsLogger";
+import {
+  createErrorResponse,
+  createNotFoundResponse,
+  createSuccessResponse,
+} from "@/utils/apiResponses";
+import { logger } from "@/utils/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -12,27 +18,15 @@ export async function GET(request: NextRequest): Promise<Response> {
     if (latest) {
       const log = await getLatestLog();
       if (!log) {
-        return new Response(JSON.stringify({ error: "No logs found" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        });
+        return createNotFoundResponse("Logs");
       }
-      return new Response(JSON.stringify(log), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      return createSuccessResponse(log);
     }
 
     const logs = await getRecentLogs(limit);
-    return new Response(JSON.stringify(logs), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return createSuccessResponse(logs);
   } catch (error) {
-    console.error("Error fetching logs:", error);
-    return new Response(JSON.stringify({ error: "Failed to fetch logs" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    logger.error("Error fetching logs", error, "api:logs");
+    return createErrorResponse(error, undefined, 500);
   }
 }

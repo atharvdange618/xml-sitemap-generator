@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { getSitemapQueue } from "@/utils/sitemap/queue";
+import { createErrorResponse } from "@/utils/apiResponses";
+import { logger } from "@/utils/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -8,10 +10,11 @@ export async function GET(request: NextRequest): Promise<Response> {
   const jobId = searchParams.get("jobId");
 
   if (!jobId) {
-    return new Response(JSON.stringify({ error: "jobId is required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return createErrorResponse(
+      { message: "jobId is required", code: "VALIDATION_FAILED" },
+      undefined,
+      400,
+    );
   }
 
   const sitemapQueue = getSitemapQueue();
@@ -24,7 +27,9 @@ export async function GET(request: NextRequest): Promise<Response> {
       const job = await sitemapQueue.getJob(jobId);
       if (!job) {
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "error", message: "Job not found" })}\n\n`)
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "error", message: "Job not found" })}\n\n`,
+          ),
         );
         controller.close();
         return;
@@ -40,7 +45,9 @@ export async function GET(request: NextRequest): Promise<Response> {
           const currentJob = await sitemapQueue.getJob(jobId);
           if (!currentJob) {
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: "error", message: "Job data lost" })}\n\n`)
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "error", message: "Job data lost" })}\n\n`,
+              ),
             );
             controller.close();
             isClosed = true;
@@ -52,20 +59,30 @@ export async function GET(request: NextRequest): Promise<Response> {
 
           if (progress && typeof progress === "object") {
             const pObj = progress as any;
-            if (pObj.count !== lastProgressCount || pObj.url !== lastProgressUrl) {
+            if (
+              pObj.count !== lastProgressCount ||
+              pObj.url !== lastProgressUrl
+            ) {
               lastProgressCount = pObj.count;
               lastProgressUrl = pObj.url;
               controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: "progress", url: pObj.url, count: pObj.count })}\n\n`)
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: "progress", url: pObj.url, count: pObj.count })}\n\n`,
+                ),
               );
             }
           }
 
           if (state === "completed") {
-            if (timerId) { clearTimeout(timerId); timerId = null; }
+            if (timerId) {
+              clearTimeout(timerId);
+              timerId = null;
+            }
             const result = currentJob.returnvalue;
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: "done", stats: result?.stats })}\n\n`)
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "done", stats: result?.stats })}\n\n`,
+              ),
             );
             controller.close();
             isClosed = true;
@@ -73,14 +90,17 @@ export async function GET(request: NextRequest): Promise<Response> {
           }
 
           if (state === "failed") {
-            if (timerId) { clearTimeout(timerId); timerId = null; }
+            if (timerId) {
+              clearTimeout(timerId);
+              timerId = null;
+            }
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({
                   type: "error",
                   message: currentJob.failedReason || "Background crawl failed",
-                })}\n\n`
-              )
+                })}\n\n`,
+              ),
             );
             controller.close();
             isClosed = true;
@@ -89,13 +109,20 @@ export async function GET(request: NextRequest): Promise<Response> {
 
           timerId = setTimeout(checkJob, 2000);
         } catch (error: any) {
-          console.error("Error checking job progress in SSE:", error);
+          logger.error(
+            "Error checking job progress in SSE",
+            error,
+            "api:status",
+            { jobId },
+          );
           if (timerId) {
             clearTimeout(timerId);
             timerId = null;
           }
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`)
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`,
+            ),
           );
           controller.close();
           isClosed = true;
