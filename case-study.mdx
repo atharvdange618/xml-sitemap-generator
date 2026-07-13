@@ -1,0 +1,307 @@
+---
+title: "XML Sitemap Generator"
+status: "completed"
+featured: true
+stack:
+  - "Next.js 16"
+  - "React 19"
+  - "TypeScript 6"
+  - "Puppeteer"
+  - "BullMQ"
+  - "Redis"
+  - "node-html-parser"
+  - "Server-Sent Events (SSE)"
+  - "Framer Motion"
+  - "Tailwind CSS 4"
+  - "Axios"
+startedAt: "2025-03-01"
+updatedAt: "2026-07-13"
+github: "https://github.com/atharvdange618/xml-sitemap-generator"
+live: "https://sitemap.atharvdangedev.in"
+description: "A production-grade web crawler and sitemap discovery engine with background job processing, real-time progress streaming, and intelligent CSR/SSR detection for creating SEO-compliant XML sitemaps."
+---
+
+XML Sitemap Generator is a web crawler and sitemap discovery engine that creates SEO-compliant XML sitemaps for both static and dynamically rendered websites.
+
+The crawler decides, per page, whether to parse raw HTML or spin up a headless browser. It queues jobs through BullMQ and Redis so long crawls never hit serverless timeouts. It streams progress back to the UI via Server-Sent Events. It also discovers, crawls, validates, and merges existing sitemap data to find pages the fresh crawl alone might miss.
+
+---
+
+## The Challenge
+
+Standard web crawlers fetch HTML and extract links from it. That works fine for server-rendered pages. But client-side frameworks like React, Vue, and Next.js SPAs render their links with JavaScript after the initial HTML loads. The raw HTML often contains nothing useful.
+
+Crawling those pages requires a headless browser like Puppeteer to execute the JavaScript and wait for the DOM to hydrate. Headless browsers are slow to start, eat memory, and leak resources if you are not careful. Running one inside a serverless function makes things worse: you get hard timeouts, tight memory caps, and no way to keep a process alive across requests.
+
+The problems I needed to solve:
+
+- Detect whether a page is server-rendered or client-rendered without loading it twice.
+- Respect `robots.txt` disallow rules.
+- Keep memory and concurrency under control, including recycling browser instances to prevent leaks.
+- Run crawls that take minutes without them getting killed by serverless timeouts.
+- Show the user what is happening in real time so they do not sit staring at a blank screen.
+- Handle image metadata extraction and split output files when sites are large.
+
+**My Role:** I was the sole developer, from the hybrid parsing engine and BullMQ queue infrastructure to the SSE streaming pipeline and the React/Next.js frontend.
+
+---
+
+## The Solution
+
+The system works in stages: a queue accepts crawl jobs, a background worker pulls them and runs the crawl, and results are streamed back to the browser.
+
+### How it works
+
+The hybrid crawling engine uses `node-html-parser` for fast static HTML parsing and falls back to Puppeteer for JavaScript-heavy pages. A scoring-based heuristic decides which path to take by checking visible text density, framework root selectors, splash screen presence, and hydration markers.
+
+The BullMQ queue decouples crawl execution from the API. API routes validate the URL, add a job to the queue, and return a job ID. A separate worker process picks up the job and runs the crawl with configurable concurrency.
+
+Sitemap discovery reads `robots.txt` for existing sitemap URLs, downloads them, parses the entries (including `<lastmod>` dates), and merges everything with the fresh crawl output. If a sitemap references a sitemap index file, it resolves child sitemaps recursively.
+
+Progress updates go through Server-Sent Events. The worker writes progress to Redis; the SSE endpoint polls Redis every two seconds and pushes updates to the browser.
+
+Image extraction pulls from standard `<img>` tags, shadow DOM roots, and `srcset` attributes. The compiled output follows Google's image sitemap schema.
+
+When a sitemap exceeds 50,000 URLs, the generator splits it into a `<sitemapindex>` file pointing to chunked `sitemap-N.xml` files, each under the limit. Both XML and gzipped versions are produced.
+
+The crawler respects `robots.txt` rules (RFC 9309, with wildcard and longest-match semantics), assigns priority values based on folder depth (1.0 for the homepage, decreasing by 0.1 per level), and carries forward `<lastmod>` dates from existing sitemaps.
+
+---
+
+## Technical Architecture
+
+The crawler runs as a Redis-backed BullMQ queue with a background worker that processes jobs independently from the API layer:
+
+```ascii
+                                ┌─────────────────┐
+                                │    React UI     │
+                                └────────┬────────┘
+                                         │ (1) POST /api/generate-sitemap
+                                         ▼
+                            ┌────────────────────────┐
+                            │  API Route Dispatcher   │
+                            │  (Validates & Enqueues) │
+                            └────────────┬───────────┘
+                                         │ (2) Add Job to BullMQ Queue
+                                         ▼
+                            ┌────────────────────────┐
+                            │  Redis Queue (BullMQ)  │
+                            └────────────┬───────────┘
+                                         │ (3) Worker Polls & Dequeues
+                                         ▼
+                   ┌─────────────────────────────────────┐
+                   │   Background Worker (sitemapWorker)  │
+                   │                                     │
+                   │  ┌──────────────────────┐            │
+                   │  │  Discovery Engine    │            │
+                   │  │  (robots.txt +       │            │
+                   │  │   Sitemap Index)     │            │
+                   │  └──────────┬───────────┘            │
+                   │             │ (4) Seed URLs           │
+                   │             ▼                        │
+                   │     ┌───────────────┐                │
+           ┌───────┤     │  BFS Crawl    │                │
+           │       │     │  Queue        │                │
+           │       │     └───────┬───────┘                │
+           │       │             │ (5) Dequeue             │
+           │       │             ▼                        │
+           │       │  ┌─────────────────────┐             │
+           │       │  │ CSR Heuristic Check │             │
+           │       │  └────┬───────────┬────┘             │
+           │       │       │ (Static)  │ (JS Rendered)    │
+           │       │       ▼           ▼                  │
+           │       │  ┌─────────┐ ┌────────────┐         │
+           │       │  │  HTML   │ │ Puppeteer  │         │
+           │       │  │ Parser  │ │ (Recycle   │         │
+           │       │  │         │ │  @ 100)    │         │
+           │       │  └────┬────┘ └─────┬──────┘         │
+           │       │       └──────┬─────┘                 │
+           │       │              │ (6) Parse Links       │
+           │       │              ▼                       │
+           │       │  ┌──────────────────────┐            │
+           │       │  │ XML & Gzip Compiler  │            │
+           │       │  └──────────────────────┘            │
+           │       │              │                       │
+           │       └──────────────┤                       │
+           │                      │ (7) Update Progress   │
+           │                      ▼                       │
+           │            ┌─────────────────┐               │
+           │            │  Redis Progress  │               │
+           │            │  Store           │               │
+           │            └────────┬────────┘               │
+           │                     │                        │
+           └─────────────────────┼────────────────────────┘
+                                 │ (8) SSE Stream
+                                 ▼
+                        ┌─────────────────┐
+                        │    React UI     │
+                        └─────────────────┘
+```
+
+1. The API route validates the URL, checks backpressure (max 10 concurrent jobs), and adds the job to BullMQ. The job ID comes back immediately.
+2. A background worker pulls the job and starts the crawl. It reads `robots.txt`, discovers existing sitemaps, and seeds the BFS queue. For each URL, it tries a fast HTTP fetch first. If the CSR heuristic scores the page as client-rendered (score >= 3), it falls back to Puppeteer. The `RecyclableBrowser` class kills and relaunches Chromium every 100 page loads.
+3. URLs from the fresh crawl and from existing sitemaps get merged. `<lastmod>` dates from sitemaps are kept. HEAD-only requests check whether sitemap-discovered URLs are still indexable. Priority is calculated per page based on depth.
+4. Progress goes into Redis. The SSE endpoint polls it and streams updates to the client.
+
+---
+
+## Engineering Deep Dives
+
+### 1. Hybrid Dispatcher and Scoring-Based CSR Detection
+
+The crawler fetches each URL with a fast HTTP client first. It then runs a scoring heuristic on the raw HTML. Pages that score below 3 are treated as server-rendered; pages at 3 or above go to Puppeteer.
+
+```typescript
+// CSR detection in src/utils/sitemap/crawler.ts
+export function detectCSR(html: string, root: HTMLElement): boolean {
+  let score = 0;
+
+  // SSR frameworks that include server-rendered data are NOT CSR
+  if (html.includes("__NEXT_DATA__") || html.includes("self.__next_f") ||
+      html.includes("window.__NUXT__") || html.includes("__remixContext") ||
+      html.includes("astro-island") || html.includes("data-sveltekit-hydrate"))
+    return false;
+
+  // Pages requiring JavaScript to display content
+  if (/<noscript>.*enable javascript/i.test(html)) return true;
+
+  // Visible text density check (empty body = likely CSR)
+  const visibleTextLen = bodyClone.text.trim().length;
+  if (visibleTextLen < 200) score += 3;
+  else if (visibleTextLen < 800) score += 1;
+
+  // Framework root selectors (empty root = CSR app shell)
+  const roots = ["#root", "#__next", "#app", "#__nuxt", "[ng-version]"];
+  if (hasRoot && rootIsEmpty) score += 4;
+  else if (hasRoot && visibleTextLen < 500) score += 2;
+
+  // Splash screen / loading indicator
+  if (splash && bodyClone.childNodes.length <= 3) score += 2;
+
+  return score >= 3;
+}
+```
+
+A per-path render cache avoids running the heuristic on every page. The first 3 pages fetched at each URL path prefix are sampled. Once all 3 agree on SSR or CSR, the decision locks for that prefix. If HTTP fetching fails 3 or more times on a path, it locks to browser mode. If an entire origin accumulates 6 or more failures, the whole domain switches to browser mode.
+
+### 2. Asynchronous Queue Architecture with BullMQ
+
+The first version ran crawls inside Next.js API routes. Large crawls hit serverless timeouts. The refactored version uses a BullMQ job queue backed by Redis:
+
+- The API route validates the URL, checks backpressure, and enqueues the job. It returns a job ID right away.
+- A separate worker process (`sitemapWorker.ts`) polls the queue, runs the crawl with a 10-minute `AbortController` timeout, and writes progress into Redis.
+- The SSE status endpoint reads progress from Redis every 2 seconds and streams it to the client.
+
+```typescript
+// Worker concurrency and lock configuration
+const worker = new Worker("sitemap-queue", processJob, {
+  connection: getRedisConnection(),
+  concurrency: workerConcurrency,  // configurable via SITEMAP_WORKER_CONCURRENCY
+  lockDuration: 180000,            // 3 min lock to handle CPU-heavy parsing
+  lockRenewTime: 30000,
+  stalledInterval: 30000,
+});
+```
+
+The queue handles retries, job persistence, and concurrency control. Crawls of 1000 or more pages run without hitting timeouts, and the API layer stays responsive because it does no crawling work itself.
+
+### 3. Recyclable Browser Pool and Memory Management
+
+Puppeteer uses about 150MB of RAM per Chromium instance. Left alone, that memory grows over time as pages accumulate state. The `RecyclableBrowser` class bounds this:
+
+```typescript
+class RecyclableBrowser {
+  private maxPages = 100;  // Recycle after 100 page loads
+
+  async newPage(): Promise<Page> {
+    await this.init();
+    this.currentBrowserPagesOpened++;
+
+    if (this.currentBrowserPagesOpened >= this.maxPages) {
+      this.recycleScheduled = true;  // Schedule recycle after all pages close
+    }
+
+    const page = await this.currentBrowser!.newPage();
+    // Track active pages, auto-recycle when count hits zero
+    // ...
+  }
+}
+```
+
+Recycling happens gracefully. The class waits until all currently open pages have closed, then kills the Chromium process and launches a fresh one. No active page render gets interrupted. Per-page request interception blocks images, media, and fonts to keep individual page loads lightweight.
+
+### 4. Circuit Breaker for HTTP Resilience
+
+Each origin gets its own circuit breaker. After 5 consecutive failures, the circuit opens and stops sending requests to that host for 30 seconds. When the timeout expires, a single test request checks whether the site has recovered:
+
+```typescript
+// Circuit breaker opens after 5 failures, retries after 30s
+export const httpCircuitBreakers = new CircuitBreakerManager({
+  failureThreshold: 5,
+  recoveryTimeout: 30000,
+  successThreshold: 2,
+});
+```
+
+This prevents a single broken site from wasting crawl time on repeated failing requests.
+
+### 5. Error Hierarchy and Metrics
+
+Errors are classified into typed classes with severity levels, retryability flags, and error codes:
+
+```typescript
+enum ErrorCode {
+  HTTP_FETCH_FAILED, HTTP_TIMEOUT, HTTP_RATE_LIMITED,
+  CRAWL_FAILED, CRAWL_TIMEOUT, PUPPETEER_FAILED,
+  QUEUE_FULL, REDIS_CONNECTION_FAILED,
+  // ... 20+ error codes
+}
+
+class AppError extends Error {
+  constructor(message, code, severity, retryable, context, cause) { ... }
+}
+```
+
+The `MetricsCollector` singleton records crawl counts, URL processing stats, and P95 crawl durations. It keeps the last 100 duration samples for percentile calculations.
+
+### 6. Canonical Chain Following and Redirect Handling
+
+When the crawler hits a page with a `<link rel="canonical">` pointing to a different URL, it follows the chain. If page A canonicals to page B (which is non-indexable) and page B links to page C, the crawler tracks A -> B -> C to find the indexable target. This handles the common pattern of `noindex` pages that canonical to their indexed version.
+
+Redirects are caught at two levels. Axios tracks HTTP redirects and flags cross-domain ones. Puppeteer compares the response URL to the requested URL. Cross-domain redirects are noted but not followed for link extraction.
+
+---
+
+## Technical Challenges and Trade-offs
+
+### 1. Serverless Environments vs. Long-Running Crawls
+
+Next.js serverless functions shut down after a few minutes. A crawl of 1000 pages can take much longer than that.
+
+I moved crawling into a BullMQ queue with a separate worker process. The API route just enqueues jobs; the worker runs independently with a 10-minute timeout. For sites that need more time, Docker deployment bypasses serverless limits. An `ecosystem.config.js` is provided for that.
+
+### 2. Puppeteer Resource Footprint
+
+Chromium is heavy and leaks memory over long sessions.
+
+The `RecyclableBrowser` kills and relaunches Chromium every 100 page loads. Request interception blocks images, media, and fonts on each page. BFS crawling is capped at 5 concurrent pages.
+
+### 3. Infinite Recursion and Dynamic Parameter Loops
+
+Sites with dynamic URLs like `/date?day=1`, `/date?day=2` can trap a recursive crawler.
+
+URL normalization strips tracking parameters (`utm_*`, `fbclid`, `gclid`, and others). Depth is capped at 10 levels by default (configurable). Path exclusion patterns skip tag, category, archive, author, and paginated pages automatically.
+
+### 4. Large Sitemap Handling
+
+The XML sitemap protocol caps each file at 50,000 URLs.
+
+When the generator exceeds that threshold, it produces a `<sitemapindex>` pointing to multiple `sitemap-N.xml` chunk files. Both XML and gzipped versions are generated for each chunk.
+
+---
+
+## Results
+
+The crawler handles up to 1000 pages per session across both CSR and SSR sites. It merges sitemap data with fresh crawl output to reduce indexing gaps. Memory stays under 350MB during maximum concurrency because of the browser recycling and request interception. The output is standards-compliant XML with depth-based priorities, `<lastmod>` dates, image schema entries, and hreflang alternate links.
+
+On the operational side: circuit breakers keep flaky origins from wasting time. Atomic file writes prevent partial sitemaps. The worker shuts down cleanly on SIGTERM and SIGINT. Structured logging with child loggers gives per-job and per-crawler context.

@@ -47,8 +47,6 @@ next-env.d.ts
 crawl.md
 review.md
 migration.md
-.kimchi
 .commandcode
-case-study.mdx
 ecosystem.config.js
 docs/
