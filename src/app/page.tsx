@@ -591,7 +591,7 @@ export default function Home() {
             "@context": "https://schema.org",
             "@type": "WebApplication",
             name: "XML Sitemap Generator",
-            url: "https://sitemap.atharvdangedev.in",
+            url: "https://sitemap.atharvdange.com",
             description:
               "An intelligent XML sitemap generator that crawls websites, supports CSR/SSR rendering, respects robots.txt rules, and outputs SEO-optimized sitemaps.",
             applicationCategory: "SEO Tool",
@@ -1110,7 +1110,7 @@ export default function Home() {
           <p>
             Built with Next.js by{" "}
             <a
-              href="https://atharvdangedev.in"
+              href="https://atharvdange.com"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-neutral-200 underline underline-offset-4 decoration-emerald-500/30 font-medium"
